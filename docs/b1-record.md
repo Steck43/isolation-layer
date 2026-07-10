@@ -39,11 +39,13 @@ Proof script modes (`scripts/b1-prove.py`):
 | `direct` (default) | `bin/firecracker` or `/usr/local/bin/firecracker` directly |
 | `jailed` | `/usr/local/bin/jailer` with `--cgroup-version 2`, same golden image |
 
-**Jailer launch requires root.** The Cursor agent shell cannot authenticate `sudo` non-interactively. Operator command to close B1 under jailer:
+**Jailer launch requires root.** Operator closed this with:
 
 ```bash
 sudo python3 ~/isolation-layer/scripts/b1-prove.py --mode jailed
 ```
+
+Jailed proof run: `run/b1-jailed-1783644322/b1_results.json`.
 
 ## 3. Golden guest image (base seed)
 
@@ -62,13 +64,9 @@ This image is the **base seed** for later quarantine and live derivations.
 
 Proof script: `scripts/b1-prove.py` (`--mode direct` or `--mode jailed`).
 
-**Jailed boot:** pending operator run (agent shell cannot `sudo`). Run:
+**Jailed boot (completed):** operator run; spot-checks and BS-00 below.
 
-```bash
-sudo python3 ~/isolation-layer/scripts/b1-prove.py --mode jailed
-```
-
-**Direct boot (completed):** spot-checks and BS-00 below.
+**Direct boot (completed):** spot-checks and BS-00 below (separate run for comparison).
 
 ### Boot
 
@@ -112,29 +110,28 @@ NO_HOST_HOME
 
 Measured on `aegis-box` (L1 Firecracker guest under Hyper-V), cold boot, no snapshot:
 
-| Metric | Value | Method |
+| Metric | Direct (`b1-direct-1783643482`) | Jailed (`b1-jailed-1783644322`) |
 |---|---|---|
-| Time to guest userspace (multi-user/login prompt) | **1700.8 ms** | Wall clock from Firecracker process start to serial banner |
-| Time to trivial workload (`uname -a` via serial) | **~4–5 s** after userspace | Included in full prove run |
-| Full prove script elapsed (userspace + 4 checks + vsock) | **18970.1 ms** | End-to-end `b1-prove.py` |
+| Time to guest userspace | **1700.8 ms** | **958.6 ms** |
+| Full prove elapsed (userspace + checks + vsock) | **18970.1 ms** | **18234.8 ms** |
 
-Bare-metal reference (125 ms init / 5–30 ms snapshot-restore) does **not** apply on this nested host. Cold boot here is ~1.7 s to userspace.
+Bare-metal reference (125 ms init / 5–30 ms snapshot-restore) does **not** apply on this nested host.
 
 Warm snapshot restore: **not measured** in B1 (no snapshot created).
 
-Latest run artifacts: `run/b1-1783643482/b1_results.json`.
+Latest run artifacts: `run/b1-jailed-1783644322/b1_results.json`, `run/b1-direct-1783643482/b1_results.json`.
 
 ## 6. Record vs vision
 
 | Item | Status |
 |---|---|
-| Firecracker + jailer binaries v1.16.1 | **RECORD** (installed locally; `/usr/local/bin` pending operator `sudo`) |
+| Firecracker + jailer binaries v1.16.1 | **RECORD** — `/usr/local/bin` |
 | Golden CI kernel + rootfs | **RECORD** |
 | MicroVM cold boot on nested host (direct) | **RECORD** |
-| MicroVM cold boot under jailer | **Pending** — operator `sudo ... --mode jailed` |
-| BS-00 cold-boot numbers (direct) | **RECORD** |
+| MicroVM cold boot under jailer | **RECORD** |
+| BS-00 cold-boot numbers (direct + jailed) | **RECORD** |
 | Warm snapshot pool | **VISION** (not in B1 scope) |
 
 ## 7. Stop
 
-B1 jailed path implemented in `scripts/b1-prove.py`. Jailed proof must be run by operator with `sudo` (see §2). Do not proceed to B2 until jailed results are recorded.
+B1 closed. Jailed path proven via `scripts/b1-prove.py --mode jailed`. B2 builds on this substrate.
