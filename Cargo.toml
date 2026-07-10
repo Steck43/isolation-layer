@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aegis-common",
+    "crates/jailer-launch",
+    "crates/isolation-manager",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"

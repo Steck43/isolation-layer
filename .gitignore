@@ -13,3 +13,6 @@ bin/
 # Build intermediates
 *.squashfs.upstream
 squashfs-root/
+
+# Rust build output
+/target/

@@ -1,0 +1,6 @@
+# Scoped sudoers rule for jailer-launch (proposed — not installed by the build)
+
+# Allow the Isolation Manager user to invoke ONLY the jailer-launch helper as root.
+# No blanket NOPASSWD. No python, no agent, no general commands.
+
+landen ALL=(root) NOPASSWD: /usr/local/bin/jailer-launch
