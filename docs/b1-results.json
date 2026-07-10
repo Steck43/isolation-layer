@@ -1,0 +1,15 @@
+{
+  "time_to_userspace_ms": 1700.8,
+  "time_to_workload_ms": 18970.1,
+  "vsock_roundtrip": {
+    "ok": true,
+    "port": 52,
+    "rx": "hello-from-guest\n"
+  },
+  "checks": {
+    "ls /dev/kvm 2>&1": "\n\nls /dev/kvm 2>&1\nWelcome to Ubuntu 24.04.4 LTS (GNU/Linux 6.1.176 x86_64)\n\n * Documentation:  https://help.ubuntu.com\n * Management:     https://landscape.canonical.com\n * Support:        https://ubuntu.com/pro\n\nThis system has been minimized by removing packages and content that are\nnot required on a system that users do not log into.\n\nTo restore this content, you can run the 'unminimize' command.\nroot@ubuntu-fc-uvm:~# ls /dev/kvm 2>&1\nls: cannot access '/dev/kvm': No such file or directory\n",
+    "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS": "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\nNO_VMM_PROCS\n",
+    "ls /home/landen 2>&1 || echo NO_HOST_HOME": "root@ubuntu-fc-uvm:~# ls /home/landen 2>&1 || echo NO_HOST_HOME\nls: cannot access '/home/landen': No such file or directory\nNO_HOST_HOME\n",
+    "uname -a": "root@ubuntu-fc-uvm:~# uname -a\nLinux ubuntu-fc-uvm 6.1.176 #1 SMP PREEMPT_DYNAMIC Wed Jul  8 03:21:16 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux\n"
+  }
+}

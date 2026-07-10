@@ -1,0 +1,15 @@
+# Golden image artifacts (fetch via scripts/fetch-golden-image.sh)
+artifacts/
+
+# Ephemeral VM runs
+run/
+
+# Jailer chroot runtime
+jailer/
+
+# Local Firecracker binaries (install via scripts/install-firecracker.sh)
+bin/
+
+# Build intermediates
+*.squashfs.upstream
+squashfs-root/
