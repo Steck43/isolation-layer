@@ -22,7 +22,7 @@ Host: `aegis-box` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec: 
 
 Install script: `scripts/install-firecracker.sh` (targets `/usr/local/bin`, requires `sudo`).
 
-**Divergence:** Non-interactive `sudo` is unavailable in the Cursor agent shell (`sudo: interactive authentication is required`). Binaries were installed to `bin/` for proof runs. Operator must run `scripts/install-firecracker.sh` to place them in `/usr/local/bin`.
+Binaries are installed at `/usr/local/bin` (operator ran `sudo ~/isolation-layer/scripts/install-firecracker.sh`).
 
 ```
 $ firecracker --version
@@ -30,6 +30,19 @@ Firecracker v1.16.1
 
 $ jailer --version
 Jailer v1.16.1
+```
+
+Proof script modes (`scripts/b1-prove.py`):
+
+| Mode | Launch path |
+|---|---|
+| `direct` (default) | `bin/firecracker` or `/usr/local/bin/firecracker` directly |
+| `jailed` | `/usr/local/bin/jailer` with `--cgroup-version 2`, same golden image |
+
+**Jailer launch requires root.** The Cursor agent shell cannot authenticate `sudo` non-interactively. Operator command to close B1 under jailer:
+
+```bash
+sudo python3 ~/isolation-layer/scripts/b1-prove.py --mode jailed
 ```
 
 ## 3. Golden guest image (base seed)
@@ -47,15 +60,15 @@ This image is the **base seed** for later quarantine and live derivations.
 
 ## 4. MicroVM boot and isolation spot-checks
 
-Proof script: `scripts/b1-prove.py`.
+Proof script: `scripts/b1-prove.py` (`--mode direct` or `--mode jailed`).
 
-**Jailer blocker:** Firecracker jailer requires root (`unshare` mount namespace, cgroup setup, `mknod` for `/dev/kvm` in chroot). Without passwordless `sudo`, jailer launch fails:
+**Jailed boot:** pending operator run (agent shell cannot `sudo`). Run:
 
+```bash
+sudo python3 ~/isolation-layer/scripts/b1-prove.py --mode jailed
 ```
-Failed to unshare into new mount namespace: Operation not permitted (os error 1)
-```
 
-Boot and spot-checks were executed with Firecracker directly (same golden image and vsock config). Operator can re-run under jailer after `sudo` is available.
+**Direct boot (completed):** spot-checks and BS-00 below.
 
 ### Boot
 
@@ -117,11 +130,11 @@ Latest run artifacts: `run/b1-1783643482/b1_results.json`.
 |---|---|
 | Firecracker + jailer binaries v1.16.1 | **RECORD** (installed locally; `/usr/local/bin` pending operator `sudo`) |
 | Golden CI kernel + rootfs | **RECORD** |
-| MicroVM cold boot on nested host | **RECORD** (direct Firecracker; jailer pending root) |
-| BS-00 cold-boot numbers | **RECORD** |
-| Jailer-wrapped boot | **VISION** until root/sudo available |
+| MicroVM cold boot on nested host (direct) | **RECORD** |
+| MicroVM cold boot under jailer | **Pending** — operator `sudo ... --mode jailed` |
+| BS-00 cold-boot numbers (direct) | **RECORD** |
 | Warm snapshot pool | **VISION** (not in B1 scope) |
 
 ## 7. Stop
 
-B1 scaffold committed locally. **Do not proceed to B2** until operator confirms jailer boot under `sudo` if that acceptance gate is strict.
+B1 jailed path implemented in `scripts/b1-prove.py`. Jailed proof must be run by operator with `sudo` (see §2). Do not proceed to B2 until jailed results are recorded.
