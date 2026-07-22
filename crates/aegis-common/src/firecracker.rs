@@ -246,7 +246,25 @@ pub fn vsock_inspect_hash(
             }
         }
         let s = String::from_utf8_lossy(&resp);
-        let hash = s.lines().next().unwrap_or("").trim().to_string();
+        let line = s.lines().next().unwrap_or("").trim().to_string();
+        // B3.2c: prefer inspect_verdict JSON; bare hex accepted one revision.
+        let hash = if line.contains("inspect_verdict") {
+            match serde_json::from_str::<serde_json::Value>(&line) {
+                Ok(v)
+                    if v.get("kind").and_then(|x| x.as_str()) == Some("inspect_verdict")
+                        && v.get("outcome").and_then(|x| x.as_str()) == Some("hash_ok") =>
+                {
+                    v.get("content_hash")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                }
+                Ok(_) => String::new(),
+                Err(_) => String::new(),
+            }
+        } else {
+            line
+        };
         if hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             let _ = fs::remove_file(&listen_path);
             return Ok(hash);

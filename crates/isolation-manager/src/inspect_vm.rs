@@ -1,8 +1,8 @@
 //! Disposable Firecracker inspector VM (B3.2b).
 //!
 //! Consumes a host `StagedBlob`: boot a one-shot jailed microVM, push staged
-//! bytes over vsock, guest returns sha256, tear down. Never the mailbox.
-//! Guest performs no judgment beyond hashing what it received.
+//! bytes over vsock, guest returns inspect_verdict JSON (hash_ok), tear down. Never the mailbox.
+//! Guest judgment is Q0 hash floor only — no malware/policy outcomes yet.
 
 use std::io::Write;
 use std::thread;
@@ -17,6 +17,7 @@ pub struct InspectVmReport {
     pub jail_id: String,
     pub expected_hash: String,
     pub guest_hash: String,
+    pub verdict_outcome: String,
     pub time_to_userspace_ms: f64,
 }
 
@@ -93,7 +94,7 @@ fn run_inspect_body(
 
     // base64 script (HELLO then hash) + socat SYSTEM path-only.
     let guest_cmd = concat!(
-        "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYgpzeXMuc3Rkb3V0LmJ1ZmZlci53cml0ZShiJ0hFTExPXG4nKQpzeXMuc3Rkb3V0LmJ1ZmZlci5mbHVzaCgpCmg9c3lzLnN0ZGluLmJ1ZmZlci5yZWFkKDQpCm49c3RydWN0LnVucGFjaygnPkknLGgpWzBdCmI9c3lzLnN0ZGluLmJ1ZmZlci5yZWFkKG4pCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGhhc2hsaWIuc2hhMjU2KGIpLmhleGRpZ2VzdCgpLmVuY29kZSgpK2InXG4nKQpzeXMuc3Rkb3V0LmJ1ZmZlci5mbHVzaCgpCg== | base64 -d > /tmp/insp_hash.py && ",
+        "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYixqc29uCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGInSEVMTE9cbicpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkKaD1zeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbj1zdHJ1Y3QudW5wYWNrKCc+SScsaClbMF0KYj1zeXMuc3RkaW4uYnVmZmVyLnJlYWQobikKZD1oYXNobGliLnNoYTI1NihiKS5oZXhkaWdlc3QoKQpsaW5lPWpzb24uZHVtcHMoeyJraW5kIjoiaW5zcGVjdF92ZXJkaWN0IiwiY29udGVudF9oYXNoIjpkLCJvdXRjb21lIjoiaGFzaF9vayJ9LHNlcGFyYXRvcnM9KCcsJywnOicpKSsnXG4nCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGxpbmUuZW5jb2RlKCkpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkK | base64 -d > /tmp/insp_hash.py && ",
         "socat VSOCK-CONNECT:2:54 SYSTEM:'python3 /tmp/insp_hash.py' ; ",
         "echo INSP_EXIT=$?\n",
     );
@@ -118,11 +119,19 @@ fn run_inspect_body(
         ));
     }
 
+    // Schema floor: guest must have spoken inspect_verdict / hash_ok (parsed upstream).
+    let verdict = inspector::InspectVerdict::hash_ok(&guest_hash);
+    verdict
+        .validate()
+        .map_err(|e| format!("inspector verdict invalid: {e}"))?;
+
     println!("inspector_vm_expected={}", staged.hash);
+    println!("inspector_verdict_outcome=hash_ok");
     Ok(InspectVmReport {
         jail_id: vm.jail_id.clone(),
         expected_hash: staged.hash.clone(),
         guest_hash,
+        verdict_outcome: "hash_ok".into(),
         time_to_userspace_ms: (t_init * 10.0).round() / 10.0,
     })
 }

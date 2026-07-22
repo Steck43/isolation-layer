@@ -217,7 +217,11 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     // B3.2b: disposable FC inspector VM consumes stage (hash verify over vsock), then die.
     let insp = crate::inspect_vm::run_disposable_inspect(&staged)?;
     let inspector_vm_ok = insp.guest_hash == drop_hash;
+    let inspector_verdict_ok =
+        inspector_vm_ok && insp.verdict_outcome == "hash_ok";
     println!("inspector_vm_ok={inspector_vm_ok}");
+    println!("inspector_verdict_ok={inspector_verdict_ok}");
+    println!("inspector_verdict_outcome={}", insp.verdict_outcome);
     println!("inspector_vm_jail_id={}", insp.jail_id);
     println!("inspector_vm_hash={}", insp.guest_hash);
 
@@ -236,7 +240,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
 
-    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok && inspector_vm_ok) {
+    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok && inspector_vm_ok && inspector_verdict_ok) {
         return Err(format!(
             "one or more spot checks failed; serial_tail={}",
             &serial[serial.len().saturating_sub(800)..]
@@ -257,6 +261,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         "dropbox_hash": drop_hash,
         "inspector_stage_ok": inspector_stage_ok,
         "inspector_vm_ok": inspector_vm_ok,
+        "inspector_verdict_ok": inspector_verdict_ok,
         "spot_checks": {
             "kvm_absent": kvm_absent,
             "host_invisible": no_vmm && no_home,
@@ -265,6 +270,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             "dropbox_handoff_ok": dropbox_handoff_ok,
             "inspector_stage_ok": inspector_stage_ok,
             "inspector_vm_ok": inspector_vm_ok,
+            "inspector_verdict_ok": inspector_verdict_ok,
         }
     }))
 }

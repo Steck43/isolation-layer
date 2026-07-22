@@ -153,6 +153,8 @@ fn run_inspect_vm(args: InspectVmArgs) -> i32 {
     match inspect_vm::run_disposable_inspect(&staged) {
         Ok(r) => {
             println!("inspector_vm_ok=true");
+            println!("inspector_verdict_ok=true");
+            println!("inspector_verdict_outcome={}", r.verdict_outcome);
             println!("inspector_vm_jail_id={}", r.jail_id);
             println!("inspector_vm_hash={}", r.guest_hash);
             println!("inspector_vm_userspace_ms={}", r.time_to_userspace_ms);

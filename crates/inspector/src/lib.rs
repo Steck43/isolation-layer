@@ -7,6 +7,10 @@
 //! retrieve-by-hash from the inert shelf into a throwaway staging dir, then
 //! dispose. No exec, no network, no schema judgment.
 
+mod verdict;
+
+pub use verdict::{parse_verdict_line, InspectOutcome, InspectVerdict, VerdictError};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
