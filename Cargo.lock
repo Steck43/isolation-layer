@@ -220,6 +220,8 @@ name = "inspector"
 version = "0.1.0"
 dependencies = [
  "dropbox",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
