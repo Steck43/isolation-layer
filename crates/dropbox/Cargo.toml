@@ -1,0 +1,10 @@
+[package]
+name = "dropbox"
+version.workspace = true
+edition.workspace = true
+description = "Inert content-addressed airlock shelf (B3.1 / synthesis §7)"
+
+[dependencies]
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
