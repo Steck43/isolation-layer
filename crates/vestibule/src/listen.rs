@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 
 use crate::frame::{decode_frame, FrameError, MAX_FRAME_BYTES};
@@ -65,6 +65,39 @@ pub fn serve_one(path: &Path, mode: ParseMode) -> Result<ResultMessage, ListenEr
     Ok(msg)
 }
 
+/// Serve one framed ResultMessage over Firecracker vsock UDS.
+/// Host binds `{vsock_base}_{port}` (same convention as `aegis_common::firecracker::vsock_roundtrip`).
+/// Waits until the vsock base socket exists (VM up) or `timeout` elapses.
+pub fn serve_vsock_one(
+    vsock_base: &Path,
+    port: u16,
+    mode: ParseMode,
+    timeout: std::time::Duration,
+) -> Result<ResultMessage, ListenError> {
+    let listen_path = PathBuf::from(format!("{}_{port}", vsock_base.display()));
+    let deadline = std::time::Instant::now() + timeout;
+    while !vsock_base.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if !vsock_base.exists() {
+        return Err(ListenError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "vsock base socket missing",
+        )));
+    }
+    if listen_path.exists() {
+        let _ = fs::remove_file(&listen_path);
+    }
+    let listener = UnixListener::bind(&listen_path)?;
+    listener.set_nonblocking(false)?;
+    let (mut stream, _) = listener.accept()?;
+    let msg = accept_one_result(&mut stream, mode)?;
+    let _ = stream.write_all(b"ACK\n");
+    let _ = fs::remove_file(&listen_path);
+    Ok(msg)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +154,40 @@ mod tests {
         let err = handle.join().unwrap().unwrap_err();
         assert!(format!("{err}").contains("not allowed") || format!("{err}").contains("kind"));
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vsock_path_accepts_framed_result() {
+        use crate::frame::encode_frame;
+        let dir = std::env::temp_dir().join(format!("vestibule-vsock-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let base = dir.join("vsock.sock");
+        fs::write(&base, b"").unwrap();
+        let port = 53u16;
+        let base_c = base.clone();
+        let handle = thread::spawn(move || {
+            serve_vsock_one(&base_c, port, ParseMode::Enforce, Duration::from_secs(5))
+        });
+        thread::sleep(Duration::from_millis(80));
+        let listen_path = PathBuf::from(format!("{}_{port}", base.display()));
+        let mut client = UnixStream::connect(&listen_path).unwrap();
+        let payload = serde_json::json!({
+            "schema_version": 1,
+            "kind": "result",
+            "task_id": "t-vsock",
+            "filename": "from-guest.txt",
+            "body": "hello-vestibule"
+        })
+        .to_string();
+        let frame = encode_frame(payload.as_bytes()).unwrap();
+        client.write_all(&frame).unwrap();
+        let mut ack = [0u8; 4];
+        client.read_exact(&mut ack).unwrap();
+        assert_eq!(&ack, b"ACK\n");
+        let msg = handle.join().unwrap().unwrap();
+        assert_eq!(msg.task_id, "t-vsock");
+        assert_eq!(msg.body, "hello-vestibule");
         let _ = fs::remove_dir_all(&dir);
     }
 }
