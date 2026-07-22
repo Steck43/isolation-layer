@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::os::unix::fs::chown;
 use std::time::Duration;
 
 use thiserror::Error;
@@ -106,8 +107,14 @@ pub fn prepare_jail_root(req: &LaunchRequest) -> Result<PathBuf, FcError> {
         &jail_root.join("vmlinux-6.1.176"),
     )?;
     // Rootfs: copy only — never hardlink (guest disk is writable in Q0 prove path).
-    copy_rootfs(&req.rootfs_path, &jail_root.join("ubuntu-24.04.ext4"))?;
-    fs::write(jail_root.join("vm_config.json"), req.vm_config_json())?;
+    // Helper runs as root; jailer drops to req.uid/gid. Writable drive must be
+    // owned by that uid or open(O_RDWR) returns EACCES (others have read only).
+    let rootfs_dst = jail_root.join("ubuntu-24.04.ext4");
+    copy_rootfs(&req.rootfs_path, &rootfs_dst)?;
+    let cfg_dst = jail_root.join("vm_config.json");
+    fs::write(&cfg_dst, req.vm_config_json())?;
+    chown(&rootfs_dst, Some(req.uid), Some(req.gid))?;
+    chown(&cfg_dst, Some(req.uid), Some(req.gid))?;
     Ok(jail_root)
 }
 

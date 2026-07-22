@@ -140,6 +140,15 @@ fn drain_to_buf(mut out: impl Read, buf: Arc<Mutex<String>>) {
     }
 }
 
+fn looks_like_sudoers_gap(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("a password is required")
+        || s.contains("interactive authentication is required")
+        || s.contains("is not in the sudoers file")
+        || s.contains("not allowed to execute")
+        || s.contains("no tty present")
+}
+
 fn blocked_message(
     _helper: &PathBuf,
     _jail_id: &str,
@@ -148,7 +157,7 @@ fn blocked_message(
     stderr: &str,
     code: Option<i32>,
 ) -> String {
-    if stderr.contains("sudo:") || code == Some(1) {
+    if looks_like_sudoers_gap(stderr) {
         format!(
             "BLOCKED pending operator install of deploy/sudoers.d/aegis-jailer\n\
              See deploy/INSTALL.md\n\
