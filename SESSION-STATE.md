@@ -1,31 +1,28 @@
 # SESSION-STATE — aegis-box
 
 **Updated:** 2026-07-22 · Cursor eng
-**Tip:** `c4601d1` on `scaffold` — **Stage-Q1 A→B prove GREEN**
+**Tip:** `63e3baa` on `scaffold` — **B3.2h PROT_EXEC filter prove GREEN**
 
 ## RECORD
 
 | Slice | Tip | What |
 | -- | -- | -- |
-| honesty | `345c428` | fail-closed / copy_rootfs / arch / no pkill |
-| chown | `f601dff` | writable rootfs drop-uid |
-| B3.2d | `2d3c3ed` | clear claim + host disposition |
-| **Q1 A→B** | tip HEAD | schema v2 markers + size_cap; prove-q1 GREEN |
+| B3.2d | `2d3c3ed` | clear claim + disposition |
+| Q1 A→B | `be475e6` | markers + size_cap Hold/Drop |
+| **B3.2h** | `63e3baa` | mmap/mprotect PROT_EXEC arg filter |
 
 ## Prove
 
-- `prove` → clear / advance / hygiene PASS
-- `prove-q1` → clear→advance · suspect→hold · failed→drop · size_cap→drop
+- `prove` GREEN · `seccomp_prot_exec_filter=true`
+- prior `prove-q1` still valid on ancestor tip
 
 ## Next VISION
 
 1. cgroup jail (no sudoers widen)
-2. mprotect exec filter
-3. always-invoked via `handoff_result_message` only
-4. FS manifest / richer analyzers (real DLP later)
+2. always-invoked via `handoff_result_message` only
+3. FS manifest / Landlock
+4. richer analyzers
 
 ## SSH
 
-Prefer Tailscale `landen@aegisbox` when up.
-Eth0: `landen@172.24.39.26` (Windows OpenSSH; WSL route may fail).
-WSL `tailscaled` disabled — host Tailscale only.
+Windows OpenSSH `landen@172.24.39.26` if Tailscale down.

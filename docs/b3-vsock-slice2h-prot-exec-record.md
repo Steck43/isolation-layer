@@ -1,6 +1,6 @@
 # B3.2h — seccomp PROT_EXEC arg filter (mmap/mprotect)
 
-**Tip:** (stamped at commit) on `scaffold`  
+**Tip:** `63e3baa` on `scaffold`
 **Date:** 2026-07-22  
 **Parent:** AEG-22 · Design: B3.2h PROT_EXEC  
 **Closes:** honesty-pack VISION line “mprotect/mmap PROT_EXEC arg filter”
