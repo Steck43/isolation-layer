@@ -1,6 +1,6 @@
 # B3.2i — listener cgroup jail (memory/pids)
 
-**Tip:** (fill after commit) on `scaffold`
+**Tip:** ba06c89 on `scaffold`
 **Date:** 2026-07-22  
 **Parent:** AEG-22 · Design: B3.2i listener cgroup jail  
 **Closes:** VISION line “cgroup” for listener (spec §3.1)
