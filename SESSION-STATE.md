@@ -1,7 +1,7 @@
 # SESSION-STATE — aegis-box
 
 **Updated:** 2026-07-22 · Cursor eng
-**Tip:** (see `git rev-parse --short HEAD`) on `scaffold` — **Stage-Q1 A→B prove GREEN**
+**Tip:** `c4601d1` on `scaffold` — **Stage-Q1 A→B prove GREEN**
 
 ## RECORD
 

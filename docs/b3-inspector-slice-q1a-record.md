@@ -1,6 +1,6 @@
 # B3 / Stage-Q1 A→B — inspect analyzer stub record
 
-**Tip:** (set at commit) on `scaffold`  
+**Tip:** `c4601d1` on `scaffold`
 **Date:** 2026-07-22  
 **Parent:** AEG-22 · Design LOCKED: Stage-Q1 analyzer stub A→B  
 **Depends:** B3.2d tip `2d3c3ed`
