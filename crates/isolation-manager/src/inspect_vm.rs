@@ -1,7 +1,7 @@
-//! Disposable Firecracker inspector VM (B3.2b + B3.2d).
+//! Disposable Firecracker inspector VM (B3.2b + B3.2d + Stage-Q1 A/B).
 //!
-//! Guest returns inspect_verdict **claim** JSON; host parses with
-//! `parse_verdict_line` and maps to disposition (Advance/Hold/Drop).
+//! Guest returns inspect_verdict **claim** JSON (schema_version 2); host parses
+//! with `parse_verdict_line` and maps to disposition (Advance/Hold/Drop).
 //! Never fabricates a verdict from a bare hash.
 
 use std::io::Write;
@@ -101,9 +101,9 @@ fn run_inspect_body(
         )
     });
 
-    // B3.2d guest: schema_version=1, outcome=clear, reasons=[hash_ok]
+    // Stage-Q1 guest: schema_version=2, analyze() markers + size_cap (see scripts/insp_hash_q1.py).
     let guest_cmd = concat!(
-        "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYixqc29uCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGInSEVMTE9cbicpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkKaD1zeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbj1zdHJ1Y3QudW5wYWNrKCc+SScsaClbMF0KYj1zeXMuc3RkaW4uYnVmZmVyLnJlYWQobikKZD1oYXNobGliLnNoYTI1NihiKS5oZXhkaWdlc3QoKQpsaW5lPWpzb24uZHVtcHMoeyJraW5kIjoiaW5zcGVjdF92ZXJkaWN0Iiwic2NoZW1hX3ZlcnNpb24iOjEsImNvbnRlbnRfaGFzaCI6ZCwib3V0Y29tZSI6ImNsZWFyIiwicmVhc29ucyI6WyJoYXNoX29rIl19LHNlcGFyYXRvcnM9KCcsJywnOicpKSsnXG4nCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGxpbmUuZW5jb2RlKCkpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCk= | base64 -d > /tmp/insp_hash.py && ",
+        "echo aW1wb3J0IHN0cnVjdCwgc3lzLCBoYXNobGliLCBqc29uCgpzeXMuc3Rkb3V0LmJ1ZmZlci53cml0ZShiIkhFTExPXG4iKQpzeXMuc3Rkb3V0LmJ1ZmZlci5mbHVzaCgpCmggPSBzeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbiA9IHN0cnVjdC51bnBhY2soIj5JIiwgaClbMF0KYiA9IHN5cy5zdGRpbi5idWZmZXIucmVhZChuKQpkID0gaGFzaGxpYi5zaGEyNTYoYikuaGV4ZGlnZXN0KCkKCiMgU2xpY2UgQjogc3RydWN0dXJhbCBib3VuZCAobm8gZm9ybWF0IHBhcnNlcikuIFByb3ZlIGJvZGllcyBhcmUgdGlueS4KTUFYX0FSVElGQUNUX0JZVEVTID0gMTA0ODU3NgpNQVJLRVJfUyA9IGIiQUVHSVNfUTFfTUFSS0VSX1NVU1BFQ1QiCk1BUktFUl9GID0gYiJBRUdJU19RMV9NQVJLRVJfRkFJTEVEIgoKb3V0Y29tZSA9ICJjbGVhciIKcmVhc29ucyA9IFsiaGFzaF9vayJdCmlmIGxlbihiKSA+IE1BWF9BUlRJRkFDVF9CWVRFUzoKICAgIG91dGNvbWUgPSAiZmFpbGVkIgogICAgcmVhc29ucyA9IFsic2l6ZV9jYXAiXQplbGlmIE1BUktFUl9GIGluIGI6CiAgICBvdXRjb21lID0gImZhaWxlZCIKICAgIHJlYXNvbnMgPSBbIm1hcmtlcl9mYWlsZWQiXQplbGlmIE1BUktFUl9TIGluIGI6CiAgICBvdXRjb21lID0gInN1c3BlY3QiCiAgICByZWFzb25zID0gWyJoYXNoX29rIiwgIm1hcmtlcl9zdXNwZWN0Il0KCmxpbmUgPSAoCiAgICBqc29uLmR1bXBzKAogICAgICAgIHsKICAgICAgICAgICAgImtpbmQiOiAiaW5zcGVjdF92ZXJkaWN0IiwKICAgICAgICAgICAgInNjaGVtYV92ZXJzaW9uIjogMiwKICAgICAgICAgICAgImNvbnRlbnRfaGFzaCI6IGQsCiAgICAgICAgICAgICJvdXRjb21lIjogb3V0Y29tZSwKICAgICAgICAgICAgInJlYXNvbnMiOiByZWFzb25zLAogICAgICAgIH0sCiAgICAgICAgc2VwYXJhdG9ycz0oIiwiLCAiOiIpLAogICAgKQogICAgKyAiXG4iCikKc3lzLnN0ZG91dC5idWZmZXIud3JpdGUobGluZS5lbmNvZGUoKSkKc3lzLnN0ZG91dC5idWZmZXIuZmx1c2goKQo= | base64 -d > /tmp/insp_hash.py && ",
         "socat VSOCK-CONNECT:2:54 SYSTEM:'python3 /tmp/insp_hash.py' ; ",
         "echo INSP_EXIT=$?\n",
     );
@@ -137,14 +137,6 @@ fn run_inspect_body(
     println!("inspector_disposition={}", disposition.as_str());
     println!("inspector_host_hash_match={host_hash_match}");
 
-    // Happy-path prove expects Advance; Hold/Drop are valid schema but not prove green.
-    if disposition != Disposition::Advance {
-        return Err(format!(
-            "inspector disposition {} (claim={claim_outcome}, hash_match={host_hash_match})",
-            disposition.as_str()
-        ));
-    }
-
     Ok(InspectVmReport {
         jail_id: vm.jail_id.clone(),
         expected_hash: staged.hash.clone(),
@@ -155,4 +147,27 @@ fn run_inspect_body(
         host_hash_match,
         time_to_userspace_ms: (t_init * 10.0).round() / 10.0,
     })
+}
+
+/// Run inspect and require a specific host disposition (prove helpers).
+pub fn run_disposable_inspect_expect(
+    staged: &StagedBlob,
+    expect: Disposition,
+) -> Result<InspectVmReport, String> {
+    let r = run_disposable_inspect(staged)?;
+    if !r.host_hash_match {
+        return Err(format!(
+            "inspector hash mismatch (claim={}, disposition={})",
+            r.claim_outcome, r.disposition
+        ));
+    }
+    if r.disposition != expect.as_str() {
+        return Err(format!(
+            "inspector disposition {} want {} (claim={})",
+            r.disposition,
+            expect.as_str(),
+            r.claim_outcome
+        ));
+    }
+    Ok(r)
 }

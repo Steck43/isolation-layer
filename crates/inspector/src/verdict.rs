@@ -1,13 +1,13 @@
-//! B3.2d inspect verdict — guest **claim** schema (not host disposition).
+//! Stage-Q1 / B3.2d inspect verdict — guest **claim** schema (not host disposition).
 //!
-//! Landen lock: allow-claim name is `clear`. Host maps claims → Advance/Hold/Drop
-//! (CaMeL/AuthGraph pattern-adopt: claims ≠ decisions). See Linear design B3.2d.
+//! `schema_version` 2: marker harness (A) + size_cap (B). Host maps claims →
+//! Advance/Hold/Drop (CaMeL/AuthGraph pattern-adopt: claims ≠ decisions).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const VERDICT_KIND: &str = "inspect_verdict";
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 pub const MAX_REASONS: usize = 4;
 
 /// Guest claim outcomes (not host storage/action verbs).
@@ -25,8 +25,14 @@ pub enum InspectOutcome {
 pub enum ReasonCode {
     HashOk,
     HashMismatch,
-    /// Fixture / future analyzer only — not a live policy result.
+    /// Fixture / unit only — not a live policy result.
     AnalyzerStub,
+    /// Slice A: exact suspect marker present in artifact.
+    MarkerSuspect,
+    /// Slice A: exact failed marker present in artifact.
+    MarkerFailed,
+    /// Slice B: artifact exceeds guest MAX_ARTIFACT_BYTES.
+    SizeCap,
 }
 
 /// Host-only disposition after parsing a claim + recomputing the hash.
@@ -43,6 +49,15 @@ impl Disposition {
             Disposition::Advance => "advance",
             Disposition::Hold => "hold",
             Disposition::Drop => "drop",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "advance" => Some(Disposition::Advance),
+            "hold" => Some(Disposition::Hold),
+            "drop" => Some(Disposition::Drop),
+            _ => None,
         }
     }
 }
@@ -106,11 +121,35 @@ impl InspectVerdict {
                         "suspect must not be only [hash_ok]".into(),
                     ));
                 }
+                if !self.reasons.contains(&ReasonCode::MarkerSuspect)
+                    && !self.reasons.contains(&ReasonCode::AnalyzerStub)
+                {
+                    return Err(VerdictError::Inconsistent(
+                        "suspect requires marker_suspect (or analyzer_stub in fixtures)"
+                            .into(),
+                    ));
+                }
+                if self.reasons.contains(&ReasonCode::MarkerFailed)
+                    || self.reasons.contains(&ReasonCode::SizeCap)
+                {
+                    return Err(VerdictError::Inconsistent(
+                        "suspect must not include marker_failed/size_cap".into(),
+                    ));
+                }
             }
             InspectOutcome::Failed => {
                 if self.reasons.as_slice() == [ReasonCode::HashOk] {
                     return Err(VerdictError::Inconsistent(
                         "failed must not be only [hash_ok]".into(),
+                    ));
+                }
+                let ok = self.reasons.contains(&ReasonCode::MarkerFailed)
+                    || self.reasons.contains(&ReasonCode::SizeCap)
+                    || self.reasons.contains(&ReasonCode::HashMismatch)
+                    || self.reasons.contains(&ReasonCode::AnalyzerStub);
+                if !ok {
+                    return Err(VerdictError::Inconsistent(
+                        "failed requires marker_failed|size_cap|hash_mismatch".into(),
                     ));
                 }
             }
@@ -175,7 +214,7 @@ mod tests {
         let line = v.to_json_line().unwrap();
         let back = parse_verdict_line(&line).unwrap();
         assert_eq!(back.outcome, InspectOutcome::Clear);
-        assert_eq!(back.schema_version, 1);
+        assert_eq!(back.schema_version, 2);
         assert_eq!(back.reasons, vec![ReasonCode::HashOk]);
         assert_eq!(decide_disposition(&back, &h64()), Disposition::Advance);
     }
@@ -183,7 +222,7 @@ mod tests {
     #[test]
     fn rejects_unknown_field() {
         let raw = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"clear","reasons":["hash_ok"],"extra":1}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"clear","reasons":["hash_ok"],"extra":1}}"#,
             h64()
         );
         assert!(parse_verdict_line(&raw).is_err());
@@ -192,7 +231,7 @@ mod tests {
     #[test]
     fn rejects_legacy_hash_ok_outcome() {
         let raw = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"hash_ok","reasons":["hash_ok"]}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"hash_ok","reasons":["hash_ok"]}}"#,
             h64()
         );
         assert!(parse_verdict_line(&raw).is_err());
@@ -214,26 +253,36 @@ mod tests {
     #[test]
     fn rejects_clear_with_wrong_reasons() {
         let raw = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"clear","reasons":["hash_mismatch"]}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"clear","reasons":["hash_mismatch"]}}"#,
             h64()
         );
         assert!(parse_verdict_line(&raw).is_err());
     }
 
     #[test]
-    fn suspect_and_failed_ok() {
+    fn suspect_marker_and_failed_marker() {
         let suspect = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"suspect","reasons":["analyzer_stub"]}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"suspect","reasons":["hash_ok","marker_suspect"]}}"#,
             h64()
         );
         let s = parse_verdict_line(&suspect).unwrap();
         assert_eq!(decide_disposition(&s, &h64()), Disposition::Hold);
 
         let failed = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"failed","reasons":["hash_mismatch"]}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"failed","reasons":["marker_failed"]}}"#,
             h64()
         );
         let f = parse_verdict_line(&failed).unwrap();
+        assert_eq!(decide_disposition(&f, &h64()), Disposition::Drop);
+    }
+
+    #[test]
+    fn size_cap_failed() {
+        let raw = format!(
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"failed","reasons":["size_cap"]}}"#,
+            h64()
+        );
+        let f = parse_verdict_line(&raw).unwrap();
         assert_eq!(decide_disposition(&f, &h64()), Disposition::Drop);
     }
 
@@ -244,9 +293,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wrong_schema_version() {
+    fn rejects_schema_version_1() {
         let raw = format!(
-            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"clear","reasons":["hash_ok"]}}"#,
+            r#"{{"kind":"inspect_verdict","schema_version":1,"content_hash":"{}","outcome":"clear","reasons":["hash_ok"]}}"#,
+            h64()
+        );
+        assert!(parse_verdict_line(&raw).is_err());
+    }
+
+    #[test]
+    fn rejects_suspect_only_hash_ok() {
+        let raw = format!(
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"suspect","reasons":["hash_ok"]}}"#,
             h64()
         );
         assert!(parse_verdict_line(&raw).is_err());

@@ -2,12 +2,14 @@ mod handoff;
 mod inspect_vm;
 mod launch;
 mod prove;
+mod prove_q1;
 
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Parser, Subcommand};
+use inspector::Disposition;
 
 #[derive(Debug, Parser)]
 #[command(name = "isolation-manager", about = "Isolation Manager (B2 B3)")]
@@ -20,11 +22,13 @@ pub struct Cli {
 pub enum Commands {
     /// Launch and tear down one jailed box; boot confirm, vsock, host-untouched diff.
     Prove(ProveArgs),
+    /// Stage-Q1 A/B: marker Hold/Drop + size_cap Drop (inspector VMs only).
+    ProveQ1,
     /// Host-only: ingest trusted body bytes into inert dropbox shelf (no guest path).
     Handoff(HandoffArgs),
     /// Host-only: stage dropbox hash into disposable inspect dir (no VM yet).
     InspectStage(InspectStageArgs),
-    /// Disposable FC inspector VM: stage then hash-verify over vsock, teardown.
+    /// Disposable FC inspector VM: stage then claim+disposition over vsock, teardown.
     InspectVm(InspectVmArgs),
 }
 
@@ -75,12 +79,16 @@ pub struct InspectVmArgs {
     /// Root for disposable stage dirs.
     #[arg(long)]
     pub stage_root: PathBuf,
+    /// Optional expected disposition: advance|hold|drop.
+    #[arg(long)]
+    pub expect: Option<String>,
 }
 
 fn main() {
     let cli = Cli::parse();
     let code = match cli.command {
         Commands::Prove(args) => prove::run(args),
+        Commands::ProveQ1 => prove_q1::run(),
         Commands::Handoff(args) => run_handoff(args),
         Commands::InspectStage(args) => run_inspect_stage(args),
         Commands::InspectVm(args) => run_inspect_vm(args),
@@ -150,10 +158,29 @@ fn run_inspect_vm(args: InspectVmArgs) -> i32 {
         }
     };
     println!("inspector_stage_ok=true");
-    match inspect_vm::run_disposable_inspect(&staged) {
+    let expect = match args.expect.as_deref() {
+        None => None,
+        Some(s) => match Disposition::parse(s) {
+            Some(d) => Some(d),
+            None => {
+                eprintln!("inspect-vm --expect must be advance|hold|drop");
+                let _ = staged.dispose();
+                return 2;
+            }
+        },
+    };
+    let result = match expect {
+        Some(d) => inspect_vm::run_disposable_inspect_expect(&staged, d),
+        None => inspect_vm::run_disposable_inspect(&staged),
+    };
+    match result {
         Ok(r) => {
+            let verdict_ok = r.schema_ok
+                && r.host_hash_match
+                && r.disposition == "advance"
+                && r.claim_outcome == "clear";
             println!("inspector_vm_ok=true");
-            println!("inspector_verdict_ok={}", r.schema_ok && r.disposition == "advance");
+            println!("inspector_verdict_ok={verdict_ok}");
             println!("inspector_claim_outcome={}", r.claim_outcome);
             println!("inspector_disposition={}", r.disposition);
             println!("inspector_vm_jail_id={}", r.jail_id);
