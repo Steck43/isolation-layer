@@ -7,11 +7,21 @@
 //! - RLIMIT_CORE = 0 (B3 slice 2f)
 //! - SECCOMP **allowlist** (default KILL) — B3 slice 2g + honesty pack
 //!   (arch gate AUDIT_ARCH_X86_64 + reject x32 bit; then allow ladder)
-//! - B3.2e: mmap/mprotect `prot` arg filter — deny `PROT_EXEC` (BPF_JSET)
-//!
-//! cgroup jail remains VISION (may need helper; no sudoers widen).
+//! - B3.2h: mmap/mprotect `prot` arg filter — deny `PROT_EXEC` (BPF_JSET)
+//! - B3.2i: listener own cgroup v2 leaf (`memory.max` + `pids.max`) via user
+//!   systemd transient scope or delegated `app.slice` mkdir — no sudoers.
 
+use std::fs;
 use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Listener memory ceiling (512 MiB).
+const LISTENER_MEMORY_MAX: u64 = 512 * 1024 * 1024;
+/// Listener tasks ceiling.
+const LISTENER_PIDS_MAX: u64 = 64;
 
 #[derive(Debug, Clone)]
 pub struct HardenReport {
@@ -25,10 +35,12 @@ pub struct HardenReport {
     pub seccomp_deny_dangerous: bool,
     /// True when seccomp default-KILL allowlist installed (2g).
     pub seccomp_allowlist: bool,
-    /// True when mmap/mprotect PROT_EXEC arg filter is installed (2e).
+    /// True when mmap/mprotect PROT_EXEC arg filter is installed (2h).
     pub seccomp_prot_exec_filter: bool,
     /// RLIMIT_CORE soft+hard cleared to 0.
     pub rlimit_core_zero: bool,
+    /// True when listener is in own cgroup with memory/pids limits (2i).
+    pub cgroup_jail: bool,
 }
 
 /// Apply listener hardening. Safe to call when already unprivileged.
@@ -37,6 +49,8 @@ pub fn apply_listener_hardening() -> io::Result<HardenReport> {
     let euid = unsafe { libc::geteuid() };
     let egid = unsafe { libc::getegid() };
 
+    // Cgroup before no_new_privs/seccomp — may exec busctl + talk to user dbus.
+    let cgroup_jail = enter_listener_cgroup().unwrap_or(false);
     let no_new_privs = set_no_new_privs()?;
     let dumpable_cleared = set_not_dumpable().unwrap_or(false);
     // Rlimits before seccomp (setrlimit must remain allowed until filter applies).
@@ -54,7 +68,151 @@ pub fn apply_listener_hardening() -> io::Result<HardenReport> {
         seccomp_allowlist,
         seccomp_prot_exec_filter: seccomp_allowlist,
         rlimit_core_zero,
+        cgroup_jail,
     })
+}
+
+fn self_cgroup_rel() -> io::Result<String> {
+    let raw = fs::read_to_string("/proc/self/cgroup")?;
+    for line in raw.lines() {
+        // v2: `0::/path`
+        if let Some(rest) = line.strip_prefix("0::") {
+            return Ok(rest.to_string());
+        }
+        let mut parts = line.splitn(3, ':');
+        let _id = parts.next();
+        let _ctrl = parts.next();
+        if let Some(path) = parts.next() {
+            return Ok(path.to_string());
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::NotFound, "no cgroup path"))
+}
+
+fn self_cgroup_fs() -> io::Result<PathBuf> {
+    let rel = self_cgroup_rel()?;
+    Ok(PathBuf::from(format!("/sys/fs/cgroup{rel}")))
+}
+
+fn limits_match(dir: &Path) -> bool {
+    let mem = fs::read_to_string(dir.join("memory.max")).unwrap_or_default();
+    let pids = fs::read_to_string(dir.join("pids.max")).unwrap_or_default();
+    mem.trim() == LISTENER_MEMORY_MAX.to_string() && pids.trim() == LISTENER_PIDS_MAX.to_string()
+}
+
+fn already_jailed() -> bool {
+    match self_cgroup_rel() {
+        Ok(rel) if rel.contains("aegis-vestibule-") => {
+            self_cgroup_fs().map(|p| limits_match(&p)).unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// Enter listener cgroup leaf. Soft-fail at call site.
+/// No process-wide mutex — tests `fork` after enter would deadlock a `Mutex`.
+fn enter_listener_cgroup() -> io::Result<bool> {
+    if already_jailed() {
+        return Ok(true);
+    }
+    if try_fs_cgroup_leaf()? {
+        return Ok(true);
+    }
+    attach_via_user_systemd()?;
+    // StartTransientUnit returns when the job is queued; migration can lag a tick.
+    for _ in 0..50 {
+        if already_jailed() {
+            return Ok(true);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!(
+            "cgroup jail attach did not land in aegis-vestibule-* with limits (now {})",
+            self_cgroup_rel().unwrap_or_else(|_| "?".into())
+        ),
+    ))
+}
+
+/// When already under delegated `user@*.service`, mkdir leaf + migrate self.
+fn try_fs_cgroup_leaf() -> io::Result<bool> {
+    let rel = self_cgroup_rel()?;
+    let marker = "/user@";
+    let Some(idx) = rel.find(marker) else {
+        return Ok(false);
+    };
+    let after = &rel[idx + marker.len()..];
+    let Some(end) = after.find('/') else {
+        return Ok(false);
+    };
+    // `/user.slice/…/user@1000.service`
+    let user_svc_rel = &rel[..idx + marker.len() + end];
+    let app_slice = PathBuf::from(format!("/sys/fs/cgroup{user_svc_rel}/app.slice"));
+    if !app_slice.is_dir() {
+        return Ok(false);
+    }
+    let pid = std::process::id();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let leaf = app_slice.join(format!("aegis-vestibule-{pid}-{nonce}.scope"));
+    fs::create_dir(&leaf)?;
+    fs::write(leaf.join("memory.max"), LISTENER_MEMORY_MAX.to_string())?;
+    fs::write(leaf.join("pids.max"), LISTENER_PIDS_MAX.to_string())?;
+    fs::write(leaf.join("cgroup.procs"), pid.to_string())?;
+    for _ in 0..50 {
+        if already_jailed() {
+            return Ok(true);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Ok(false)
+}
+
+/// Attach this PID into a transient user scope (crosses session → user@.service).
+fn attach_via_user_systemd() -> io::Result<()> {
+    let pid = std::process::id();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let unit = format!("aegis-vestibule-{pid}-{nonce}.scope");
+    let output = Command::new("busctl")
+        .args([
+            "--user",
+            "call",
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "StartTransientUnit",
+            "ssa(sv)a(sa(sv))",
+            &unit,
+            "fail",
+            "3",
+            "MemoryMax",
+            "t",
+            &LISTENER_MEMORY_MAX.to_string(),
+            "TasksMax",
+            "t",
+            &LISTENER_PIDS_MAX.to_string(),
+            "PIDs",
+            "au",
+            "1",
+            &pid.to_string(),
+            "0",
+        ])
+        .output()?;
+    if output.status.success() || already_jailed() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("busctl StartTransientUnit failed: {} {stderr}", output.status),
+        ))
+    }
 }
 
 fn set_no_new_privs() -> io::Result<bool> {
@@ -374,6 +532,30 @@ mod tests {
         assert!(set_no_new_privs().unwrap());
         let _ = set_not_dumpable();
         assert!(set_rlimit_core_zero().unwrap());
+    }
+
+    #[test]
+    fn cgroup_jail_attaches_under_user_service() {
+        // RECORD path on the box: user dbus + cgroup v2 delegation.
+        // Skip only when no user runtime (e.g. bare CI without systemd --user).
+        if std::env::var_os("XDG_RUNTIME_DIR").is_none() {
+            eprintln!("skip cgroup_jail: no XDG_RUNTIME_DIR");
+            return;
+        }
+        assert!(
+            enter_listener_cgroup().expect("cgroup jail must attach"),
+            "expected aegis-vestibule-* leaf with memory/pids limits"
+        );
+        let rel = self_cgroup_rel().unwrap();
+        assert!(
+            rel.contains("aegis-vestibule-"),
+            "cgroup path missing aegis-vestibule-: {rel}"
+        );
+        assert!(
+            rel.contains("user@"),
+            "expected under user@*.service, got {rel}"
+        );
+        assert!(already_jailed());
     }
 
     #[test]
