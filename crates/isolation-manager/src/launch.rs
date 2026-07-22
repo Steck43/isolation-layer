@@ -176,6 +176,28 @@ pub fn teardown_vm(vm: &mut LaunchedVm) {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    // Jailer reparents firecracker to PID 1; kill the recorded guest VMM pid only
+    // (never pkill -f). Path is inside this jail_root.
+    let fc_pid_path = vm.jail_root.join("firecracker.pid");
+    if let Ok(raw) = std::fs::read_to_string(&fc_pid_path) {
+        if let Ok(pid) = raw.trim().parse::<i32>() {
+            if pid > 1 {
+                let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+                for _ in 0..20 {
+                    let alive = Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if !alive {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).status();
+            }
+        }
+    }
     // Kill the helper child we spawned — never `pkill -f` (pattern can match unrelated PIDs).
     let _ = vm.child.kill();
     let _ = vm.child.wait();

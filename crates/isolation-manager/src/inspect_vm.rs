@@ -1,15 +1,16 @@
-//! Disposable Firecracker inspector VM (B3.2b + honesty pack).
+//! Disposable Firecracker inspector VM (B3.2b + B3.2d).
 //!
-//! Consumes a host `StagedBlob`: boot a one-shot jailed microVM, push staged
-//! bytes over vsock, guest returns inspect_verdict JSON (hash_ok), tear down.
-//! Never the mailbox. Hot path parses guest JSON with `parse_verdict_line`
-//! (`deny_unknown_fields`) — no bare-hex, no host-side verdict fabrication.
+//! Guest returns inspect_verdict **claim** JSON; host parses with
+//! `parse_verdict_line` and maps to disposition (Advance/Hold/Drop).
+//! Never fabricates a verdict from a bare hash.
 
 use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use inspector::{parse_verdict_line, InspectOutcome, StagedBlob};
+use inspector::{
+    decide_disposition, parse_verdict_line, Disposition, InspectOutcome, StagedBlob,
+};
 
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 
@@ -19,11 +20,14 @@ pub struct InspectVmReport {
     #[allow(dead_code)]
     pub expected_hash: String,
     pub guest_hash: String,
-    pub verdict_outcome: String,
+    pub claim_outcome: String,
+    pub disposition: String,
+    pub schema_ok: bool,
+    pub host_hash_match: bool,
     pub time_to_userspace_ms: f64,
 }
 
-/// Launch a disposable inspector VM, push staged bytes, verify guest verdict, teardown.
+/// Launch a disposable inspector VM, push staged bytes, parse claim, dispose.
 pub fn run_disposable_inspect(staged: &StagedBlob) -> Result<InspectVmReport, String> {
     let body = std::fs::read(&staged.blob_path).map_err(|e| e.to_string())?;
     if dropbox::content_hash(&body) != staged.hash {
@@ -97,9 +101,9 @@ fn run_inspect_body(
         )
     });
 
-    // base64 script: HELLO then inspect_verdict JSON
+    // B3.2d guest: schema_version=1, outcome=clear, reasons=[hash_ok]
     let guest_cmd = concat!(
-        "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYixqc29uCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGInSEVMTE9cbicpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkKaD1zeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbj1zdHJ1Y3QudW5wYWNrKCc+SScsaClbMF0KYj1zeXMuc3RkaW4uYnVmZmVyLnJlYWQobikKZD1oYXNobGliLnNoYTI1NihiKS5oZXhkaWdlc3QoKQpsaW5lPWpzb24uZHVtcHMoeyJraW5kIjoiaW5zcGVjdF92ZXJkaWN0IiwiY29udGVudF9oYXNoIjpkLCJvdXRjb21lIjoiaGFzaF9vayJ9LHNlcGFyYXRvcnM9KCcsJywnOicpKSsnXG4nCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGxpbmUuZW5jb2RlKCkpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkK | base64 -d > /tmp/insp_hash.py && ",
+        "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYixqc29uCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGInSEVMTE9cbicpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkKaD1zeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbj1zdHJ1Y3QudW5wYWNrKCc+SScsaClbMF0KYj1zeXMuc3RkaW4uYnVmZmVyLnJlYWQobikKZD1oYXNobGliLnNoYTI1NihiKS5oZXhkaWdlc3QoKQpsaW5lPWpzb24uZHVtcHMoeyJraW5kIjoiaW5zcGVjdF92ZXJkaWN0Iiwic2NoZW1hX3ZlcnNpb24iOjEsImNvbnRlbnRfaGFzaCI6ZCwib3V0Y29tZSI6ImNsZWFyIiwicmVhc29ucyI6WyJoYXNoX29rIl19LHNlcGFyYXRvcnM9KCcsJywnOicpKSsnXG4nCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGxpbmUuZW5jb2RlKCkpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCk= | base64 -d > /tmp/insp_hash.py && ",
         "socat VSOCK-CONNECT:2:54 SYSTEM:'python3 /tmp/insp_hash.py' ; ",
         "echo INSP_EXIT=$?\n",
     );
@@ -117,29 +121,38 @@ fn run_inspect_body(
         .unwrap()
         .map_err(|e| format!("inspector vsock failed: {e}"))?;
 
-    let verdict = parse_verdict_line(&reply_line)
+    let claim = parse_verdict_line(&reply_line)
         .map_err(|e| format!("inspector verdict schema: {e}; line={reply_line:?}"))?;
-    if verdict.outcome != InspectOutcome::HashOk {
-        return Err(format!("unexpected inspect outcome {:?}", verdict.outcome));
-    }
-    if verdict.content_hash != staged.hash {
-        return Err(format!(
-            "inspector hash mismatch: expected {} guest {}",
-            staged.hash, verdict.content_hash
-        ));
-    }
+    let host_hash_match = claim.content_hash == staged.hash;
+    let disposition = decide_disposition(&claim, &staged.hash);
 
-    let outcome = match verdict.outcome {
-        InspectOutcome::HashOk => "hash_ok",
+    let claim_outcome = match claim.outcome {
+        InspectOutcome::Clear => "clear",
+        InspectOutcome::Suspect => "suspect",
+        InspectOutcome::Failed => "failed",
     };
 
     println!("inspector_vm_expected={}", staged.hash);
-    println!("inspector_verdict_outcome={outcome}");
+    println!("inspector_claim_outcome={claim_outcome}");
+    println!("inspector_disposition={}", disposition.as_str());
+    println!("inspector_host_hash_match={host_hash_match}");
+
+    // Happy-path prove expects Advance; Hold/Drop are valid schema but not prove green.
+    if disposition != Disposition::Advance {
+        return Err(format!(
+            "inspector disposition {} (claim={claim_outcome}, hash_match={host_hash_match})",
+            disposition.as_str()
+        ));
+    }
+
     Ok(InspectVmReport {
         jail_id: vm.jail_id.clone(),
         expected_hash: staged.hash.clone(),
-        guest_hash: verdict.content_hash,
-        verdict_outcome: outcome.into(),
+        guest_hash: claim.content_hash,
+        claim_outcome: claim_outcome.into(),
+        disposition: disposition.as_str().into(),
+        schema_ok: true,
+        host_hash_match,
         time_to_userspace_ms: (t_init * 10.0).round() / 10.0,
     })
 }

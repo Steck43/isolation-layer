@@ -285,17 +285,17 @@ pub fn vsock_inspect_reply(
         if resp.len() > INSPECT_REPLY_MAX {
             continue;
         }
-        let s = String::from_utf8_lossy(&resp);
+        // Fail-closed: reject non-UTF-8 (no lossy coerce). Schema parse is caller's job.
+        let s = match String::from_utf8(resp) {
+            Ok(s) => s,
+            Err(_) => {
+                last_err = "inspector reply is not valid UTF-8".into();
+                continue;
+            }
+        };
         let line = s.lines().next().unwrap_or("").trim().to_string();
         if line.is_empty() {
             last_err = "empty inspector reply line".into();
-            continue;
-        }
-        // Fail closed: must look like inspect_verdict JSON (strict parse is caller's job).
-        if !line.contains("\"kind\":\"inspect_verdict\"")
-            && !line.contains("\"kind\": \"inspect_verdict\"")
-        {
-            last_err = format!("inspector reply missing inspect_verdict kind: {line:?}");
             continue;
         }
         let _ = fs::remove_file(&listen_path);

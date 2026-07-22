@@ -9,7 +9,10 @@
 
 mod verdict;
 
-pub use verdict::{parse_verdict_line, InspectOutcome, InspectVerdict, VerdictError};
+pub use verdict::{
+    decide_disposition, parse_verdict_line, Disposition, InspectOutcome, InspectVerdict,
+    ReasonCode, VerdictError, SCHEMA_VERSION, VERDICT_KIND,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};

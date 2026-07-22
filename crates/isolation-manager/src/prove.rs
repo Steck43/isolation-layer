@@ -246,14 +246,17 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     teardown_vm(vm);
     thread::sleep(Duration::from_secs(2));
 
-    // B3.2b/2c: disposable FC inspector — guest inspect_verdict JSON, deny_unknown_fields.
+    // B3.2d: disposable FC inspector — claim schema + host disposition Advance.
     let insp = crate::inspect_vm::run_disposable_inspect(&staged)?;
-    let inspector_vm_ok = insp.guest_hash == drop_hash;
-    // Verdict schema enforced inside run_disposable_inspect (parse_verdict_line).
-    let inspector_verdict_ok = inspector_vm_ok && insp.verdict_outcome == "hash_ok";
+    let inspector_vm_ok = insp.guest_hash == drop_hash && insp.host_hash_match;
+    let inspector_verdict_ok = insp.schema_ok
+        && insp.host_hash_match
+        && insp.disposition == "advance"
+        && insp.claim_outcome == "clear";
     println!("inspector_vm_ok={inspector_vm_ok}");
     println!("inspector_verdict_ok={inspector_verdict_ok}");
-    println!("inspector_verdict_outcome={}", insp.verdict_outcome);
+    println!("inspector_claim_outcome={}", insp.claim_outcome);
+    println!("inspector_disposition={}", insp.disposition);
     println!("inspector_vm_jail_id={}", insp.jail_id);
     println!("inspector_vm_hash={}", insp.guest_hash);
 
