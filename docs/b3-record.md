@@ -31,3 +31,6 @@ Synthesis §7 / Build-Pack B3 / `IDEA-OA-016` / `IDEA-OA2-212`:
 
 **B3 sequencing:** vsock doorman (schema + listener) is the Linear/spec primary so BS-04 has a concrete surface. Dropbox remains the **stronger async upgrade** (B3.1 / B4 airlock) — park ≠ delete. Do not let agents treat “PARKED” as “we dropped that idea.”
 
+## Slice 2e (2026-07-22)
+
+**RECORD:** listener deny-exec seccomp (`execve`/`execveat` → KILL) after no_new_privs; no sudoers / no libseccomp package. See `docs/b3-vsock-slice2e-record.md`.
