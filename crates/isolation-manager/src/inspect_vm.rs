@@ -87,10 +87,15 @@ fn run_inspect_body(
     let vsock_base = vm.vsock_uds.clone();
     let body_owned = body.to_vec();
     let handle = thread::spawn(move || {
-        let harden = || {
-            vestibule::apply_listener_hardening()
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+        let harden = {
+            let base = vsock_base.clone();
+            move || {
+                let listen = std::path::PathBuf::from(format!("{}_54", base.display()));
+                let roots = vestibule::landlock_roots_for_listen_path(&listen);
+                vestibule::apply_listener_hardening_with_fs_roots(&roots)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }
         };
         aegis_common::firecracker::vsock_inspect_reply(
             &vsock_base,

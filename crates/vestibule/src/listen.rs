@@ -4,7 +4,9 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 use crate::frame::{decode_frame, FrameError, MAX_FRAME_BYTES};
-use crate::harden::apply_listener_hardening;
+use crate::harden::{
+    apply_listener_hardening_with_fs_roots, landlock_roots_for_listen_path,
+};
 use crate::reject::RejectLog;
 use crate::schema::{parse_result_message_raw, ParseMode, ResultMessage, SchemaError};
 
@@ -114,11 +116,12 @@ pub fn serve_one_with_opts(
 ) -> Result<ResultMessage, ListenError> {
     let listener = bind_uds(path)?;
     if opts.harden {
-        let report = apply_listener_hardening()?;
+        let roots = landlock_roots_for_listen_path(path);
+        let report = apply_listener_hardening_with_fs_roots(&roots)?;
         eprintln!(
-            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} seccomp_allowlist={} seccomp_prot_exec_filter={} rlimit_core_zero={} cgroup_jail={}",
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} seccomp_allowlist={} seccomp_prot_exec_filter={} rlimit_core_zero={} cgroup_jail={} landlock={}",
             report.euid, report.egid, report.no_new_privs, report.dumpable_cleared,
-            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail
+            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail, report.landlock
         );
     }
     let (mut stream, _) = listener.accept()?;
@@ -161,11 +164,12 @@ pub fn serve_vsock_one_with_opts(
     let listener = UnixListener::bind(&listen_path)?;
     listener.set_nonblocking(false)?;
     if opts.harden {
-        let report = apply_listener_hardening()?;
+        let roots = landlock_roots_for_listen_path(&listen_path);
+        let report = apply_listener_hardening_with_fs_roots(&roots)?;
         eprintln!(
-            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} seccomp_allowlist={} seccomp_prot_exec_filter={} rlimit_core_zero={} cgroup_jail={}",
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} seccomp_allowlist={} seccomp_prot_exec_filter={} rlimit_core_zero={} cgroup_jail={} landlock={}",
             report.euid, report.egid, report.no_new_privs, report.dumpable_cleared,
-            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail
+            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail, report.landlock
         );
     }
     let (mut stream, _) = listener.accept()?;

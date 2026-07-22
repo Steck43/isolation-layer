@@ -10,9 +10,12 @@
 //! - B3.2h: mmap/mprotect `prot` arg filter — deny `PROT_EXEC` (BPF_JSET)
 //! - B3.2i: listener own cgroup v2 leaf (`memory.max` + `pids.max`) via user
 //!   systemd transient scope or delegated `app.slice` mkdir — no sudoers.
+//! - B3.2j: Landlock ABI1 path-beneath allowlist (host listener only; not guest box).
 
 use std::fs;
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -41,11 +44,19 @@ pub struct HardenReport {
     pub rlimit_core_zero: bool,
     /// True when listener is in own cgroup with memory/pids limits (2i).
     pub cgroup_jail: bool,
+    /// True when Landlock FS allowlist installed (2j).
+    pub landlock: bool,
+}
+
+/// Apply listener hardening with default FS root (`temp_dir` only).
+/// Prefer [`apply_listener_hardening_with_fs_roots`] after bind so jail UDS parents are allowed.
+pub fn apply_listener_hardening() -> io::Result<HardenReport> {
+    apply_listener_hardening_with_fs_roots(&[std::env::temp_dir()])
 }
 
 /// Apply listener hardening. Safe to call when already unprivileged.
-/// Call **after** bind; filter is default-deny and must allow accept/read/write/openat.
-pub fn apply_listener_hardening() -> io::Result<HardenReport> {
+/// Call **after** bind; `fs_roots` are Landlock path-beneath allow roots (e.g. `/tmp` + jail dir).
+pub fn apply_listener_hardening_with_fs_roots(fs_roots: &[PathBuf]) -> io::Result<HardenReport> {
     let euid = unsafe { libc::geteuid() };
     let egid = unsafe { libc::getegid() };
 
@@ -55,6 +66,8 @@ pub fn apply_listener_hardening() -> io::Result<HardenReport> {
     let dumpable_cleared = set_not_dumpable().unwrap_or(false);
     // Rlimits before seccomp (setrlimit must remain allowed until filter applies).
     let rlimit_core_zero = set_rlimit_core_zero().unwrap_or(false);
+    // Landlock requires no_new_privs; must precede seccomp (still needs openat for O_PATH).
+    let landlock = install_landlock(fs_roots).unwrap_or(false);
     // Filter requires no_new_privs first (kernel rule).
     let seccomp_allowlist = install_allowlist_seccomp()?;
 
@@ -69,7 +82,143 @@ pub fn apply_listener_hardening() -> io::Result<HardenReport> {
         seccomp_prot_exec_filter: seccomp_allowlist,
         rlimit_core_zero,
         cgroup_jail,
+        landlock,
     })
+}
+
+/// Collect Landlock roots for a bound listen path: temp dir + listen parent.
+pub fn landlock_roots_for_listen_path(listen_path: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+    if let Some(parent) = listen_path.parent() {
+        if parent.as_os_str().len() > 0 && parent != Path::new(".") {
+            roots.push(parent.to_path_buf());
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+// --- Landlock ABI1 (x86_64 syscall numbers) ---
+const SYS_LANDLOCK_CREATE_RULESET: libc::c_long = 444;
+const SYS_LANDLOCK_ADD_RULE: libc::c_long = 445;
+const SYS_LANDLOCK_RESTRICT_SELF: libc::c_long = 446;
+const LANDLOCK_RULE_PATH_BENEATH: u32 = 1;
+
+const LANDLOCK_ACCESS_FS_EXECUTE: u64 = 1 << 0;
+const LANDLOCK_ACCESS_FS_WRITE_FILE: u64 = 1 << 1;
+const LANDLOCK_ACCESS_FS_READ_FILE: u64 = 1 << 2;
+const LANDLOCK_ACCESS_FS_READ_DIR: u64 = 1 << 3;
+const LANDLOCK_ACCESS_FS_REMOVE_DIR: u64 = 1 << 4;
+const LANDLOCK_ACCESS_FS_REMOVE_FILE: u64 = 1 << 5;
+const LANDLOCK_ACCESS_FS_MAKE_CHAR: u64 = 1 << 6;
+const LANDLOCK_ACCESS_FS_MAKE_DIR: u64 = 1 << 7;
+const LANDLOCK_ACCESS_FS_MAKE_REG: u64 = 1 << 8;
+const LANDLOCK_ACCESS_FS_MAKE_SOCK: u64 = 1 << 9;
+const LANDLOCK_ACCESS_FS_MAKE_FIFO: u64 = 1 << 10;
+const LANDLOCK_ACCESS_FS_MAKE_BLOCK: u64 = 1 << 11;
+const LANDLOCK_ACCESS_FS_MAKE_SYM: u64 = 1 << 12;
+
+const LANDLOCK_HANDLED_FS: u64 = LANDLOCK_ACCESS_FS_EXECUTE
+    | LANDLOCK_ACCESS_FS_WRITE_FILE
+    | LANDLOCK_ACCESS_FS_READ_FILE
+    | LANDLOCK_ACCESS_FS_READ_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_FILE
+    | LANDLOCK_ACCESS_FS_MAKE_CHAR
+    | LANDLOCK_ACCESS_FS_MAKE_DIR
+    | LANDLOCK_ACCESS_FS_MAKE_REG
+    | LANDLOCK_ACCESS_FS_MAKE_SOCK
+    | LANDLOCK_ACCESS_FS_MAKE_FIFO
+    | LANDLOCK_ACCESS_FS_MAKE_BLOCK
+    | LANDLOCK_ACCESS_FS_MAKE_SYM;
+
+/// Rights granted under allow roots — intentionally omits EXECUTE.
+const LANDLOCK_ALLOWED_FS: u64 = LANDLOCK_ACCESS_FS_WRITE_FILE
+    | LANDLOCK_ACCESS_FS_READ_FILE
+    | LANDLOCK_ACCESS_FS_READ_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_FILE
+    | LANDLOCK_ACCESS_FS_MAKE_DIR
+    | LANDLOCK_ACCESS_FS_MAKE_REG
+    | LANDLOCK_ACCESS_FS_MAKE_SOCK;
+
+#[repr(C)]
+struct LandlockRulesetAttr {
+    handled_access_fs: u64,
+}
+
+#[repr(C)]
+struct LandlockPathBeneathAttr {
+    allowed_access: u64,
+    parent_fd: i32,
+}
+
+fn install_landlock(fs_roots: &[PathBuf]) -> io::Result<bool> {
+    if fs_roots.is_empty() {
+        return Ok(false);
+    }
+    let attr = LandlockRulesetAttr {
+        handled_access_fs: LANDLOCK_HANDLED_FS,
+    };
+    let ruleset_fd = unsafe {
+        libc::syscall(
+            SYS_LANDLOCK_CREATE_RULESET,
+            &attr as *const LandlockRulesetAttr,
+            std::mem::size_of::<LandlockRulesetAttr>(),
+            0isize,
+        )
+    };
+    if ruleset_fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let ruleset = unsafe { OwnedFd::from_raw_fd(ruleset_fd as i32) };
+
+    let mut added = 0usize;
+    for root in fs_roots {
+        if !root.is_dir() {
+            continue;
+        }
+        let parent = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_PATH | libc::O_CLOEXEC)
+            .open(root)?;
+        let rule = LandlockPathBeneathAttr {
+            allowed_access: LANDLOCK_ALLOWED_FS,
+            parent_fd: parent.as_raw_fd(),
+        };
+        let rc = unsafe {
+            libc::syscall(
+                SYS_LANDLOCK_ADD_RULE,
+                ruleset.as_raw_fd() as libc::c_long,
+                LANDLOCK_RULE_PATH_BENEATH as libc::c_long,
+                &rule as *const LandlockPathBeneathAttr,
+                0isize,
+            )
+        };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        added += 1;
+    }
+    if added == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "landlock: no usable fs_roots directories",
+        ));
+    }
+
+    let rc = unsafe {
+        libc::syscall(
+            SYS_LANDLOCK_RESTRICT_SELF,
+            ruleset.as_raw_fd() as libc::c_long,
+            0isize,
+        )
+    };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(true)
 }
 
 fn self_cgroup_rel() -> io::Result<String> {
@@ -556,6 +705,32 @@ mod tests {
             "expected under user@*.service, got {rel}"
         );
         assert!(already_jailed());
+    }
+
+    #[test]
+    fn landlock_allows_tmp_denies_etc() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            assert!(set_no_new_privs().unwrap());
+            let roots = vec![std::env::temp_dir()];
+            assert!(install_landlock(&roots).expect("landlock"));
+            let tmp_ok = fs::write(
+                std::env::temp_dir().join("aegis-ll-probe"),
+                b"ok",
+            )
+            .is_ok();
+            let etc_denied = fs::read_to_string("/etc/passwd").is_err();
+            let code = if tmp_ok && etc_denied { 0 } else { 42 };
+            unsafe { libc::_exit(code) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        assert!(
+            libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+            "landlock tmp/etc probe failed status={status}"
+        );
     }
 
     #[test]
