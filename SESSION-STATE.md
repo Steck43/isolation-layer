@@ -2,11 +2,11 @@
 
 **Updated:** 2026-07-22
 **Branch:** scaffold
-**Tip:** 0f04071
+**Tip:** cb39574
 
 ## CURRENT
 
-B3.2i listener cgroup jail SHIPPED (code ba06c89). Prove GREEN · `cgroup_jail=true`.
+B3.2i listener cgroup jail SHIPPED (code ba06c89 · HEAD cb39574). Prove GREEN · cgroup_jail=true.
 
 ## RECORD table
 
@@ -15,7 +15,7 @@ B3.2i listener cgroup jail SHIPPED (code ba06c89). Prove GREEN · `cgroup_jail=t
 | B3.2d | 2d3c3ed | clear + disposition |
 | Q1 A→B | be475e6 | markers + size_cap |
 | B3.2h | 9e777ce | PROT_EXEC arg filter |
-| **B3.2i** | 0f04071 | listener cgroup memory/pids |
+| **B3.2i** | cb39574 | listener cgroup memory/pids |
 
 ## Next VISION
 
@@ -23,4 +23,4 @@ Landlock · always-invoked · FS manifest · richer analyzers
 
 ## SSH
 
-Windows OpenSSH `landen@172.24.39.26` if Tailscale down.
+Windows OpenSSH landen@172.24.39.26 if Tailscale down.
