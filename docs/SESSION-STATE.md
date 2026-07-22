@@ -15,3 +15,5 @@ Branch: `scaffold` on host `aegis-box` (`~/isolation-layer`).
 1. Wire `vestibule-listen` to Firecracker vsock UDS from a jailed prove (BS-04 on-box).
 2. Privilege-drop listener (cgroup/seccomp/non-root) before claiming §3.1 complete.
 3. Do not expand sudoers beyond `/usr/local/bin/jailer-launch`.
+
+**Dropbox:** intentional HORIZON (`IDEA-CUR-147`) — not forgotten.

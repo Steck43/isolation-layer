@@ -5,7 +5,7 @@
 ## Path lock (recommend one)
 
 **Build the hardened vsock vestibule listener** (schema-bounded, result-only).  
-Content-addressed dropbox (synthesis §7) is **stronger for async handoff** but is **not** the B3 Linear/spec deliverable — park as B3.1 / B4 airlock. Do not fork B3 into both.
+Content-addressed dropbox (synthesis §7) is **stronger for async handoff** — Landen still wants this thought kept (`IDEA-CUR-147`). It is **not** the B3 Linear/spec primary deliverable; keep as **intentional HORIZON** B3.1 / B4 airlock. Park ≠ abandon. Do not fork B3 build into both at once.
 
 ## Slice 1 acceptance (this commit)
 
