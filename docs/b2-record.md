@@ -37,3 +37,20 @@ cargo run -p isolation-manager -- prove
 ## Stop
 
 B2 committed. Do not start B3 (hardened vsock listener).
+
+## E2E prove close (2026-07-21)
+
+**Status: CLOSED** via `isolation-manager prove` (jailed-via-helper).
+
+| Check | Result |
+|---|---|
+| Helper path | `/usr/local/bin/jailer-launch` (scoped NOPASSWD) |
+| BS-00 userspace | **1301.3 ms** |
+| BS-00 workload | 12302.1 ms |
+| spot kvm absent | PASS |
+| spot host invisible | PASS |
+| vsock roundtrip | PASS (`hello-from-guest`) |
+| host_untouched | PASS |
+| jail_id | `mgr-1784678609` |
+
+Trust root: `deploy/sudoers.d/aegis-jailer` installed; helper root-owned 0755.

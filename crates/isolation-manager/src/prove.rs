@@ -1,18 +1,23 @@
-use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use aegis_common::{assert_host_clean, HostSnapshot};
 use serde_json::json;
 
-use crate::launch::{launch_via_helper, teardown_vm, LaunchedVm};
+use crate::launch::{launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
 pub fn run(args: ProveArgs) -> i32 {
-    let jail_id = args
-        .jail_id
-        .unwrap_or_else(|| format!("mgr-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
+    let jail_id = args.jail_id.unwrap_or_else(|| {
+        format!(
+            "mgr-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )
+    });
 
     let before = match HostSnapshot::capture() {
         Ok(s) => s,
@@ -62,32 +67,14 @@ pub fn run(args: ProveArgs) -> i32 {
     }
 }
 
-fn run_checks(vm: &mut LaunchedVm) -> Result<serde_json::Value, String> {
-    let stdout = vm.child.stdout.take().ok_or("no stdout")?;
-    let mut stdin = vm.child.stdin.take().ok_or("no stdin")?;
-
-    let serial_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-    let reader_buf = Arc::clone(&serial_buf);
-    let reader = thread::spawn(move || {
-        let mut out = stdout;
-        let mut chunk = [0u8; 4096];
-        loop {
-            match out.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let mut guard = reader_buf.lock().unwrap();
-                    guard.push_str(&String::from_utf8_lossy(&chunk[..n]));
-                }
-                Err(_) => break,
-            }
-        }
-    });
+fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, String> {
+    let mut stdin = vm.stdin.take().ok_or("no stdin")?;
 
     let t0 = Instant::now();
     let boot_deadline = Instant::now() + Duration::from_secs(120);
     loop {
         {
-            let guard = serial_buf.lock().unwrap();
+            let guard = vm.serial_buf.lock().unwrap();
             if aegis_common::firecracker::BOOT_PATTERNS
                 .iter()
                 .any(|p| guard.contains(p))
@@ -95,28 +82,45 @@ fn run_checks(vm: &mut LaunchedVm) -> Result<serde_json::Value, String> {
                 break;
             }
             if guard.len() > 200_000 {
-                return Err(format!("boot failed; tail={}", &guard[guard.len().saturating_sub(500)..]));
+                return Err(format!(
+                    "boot failed; tail={}",
+                    &guard[guard.len().saturating_sub(500)..]
+                ));
             }
         }
         if Instant::now() > boot_deadline {
-            let guard = serial_buf.lock().unwrap();
-            return Err(format!("boot timeout; tail={}", &guard[guard.len().saturating_sub(500)..]));
+            let guard = vm.serial_buf.lock().unwrap();
+            return Err(format!(
+                "boot timeout; tail={}",
+                &guard[guard.len().saturating_sub(500)..]
+            ));
         }
         if vm.child.try_wait().ok().flatten().is_some() {
-            return Err("jailer exited before boot".into());
+            let guard = vm.serial_buf.lock().unwrap();
+            return Err(format!(
+                "jailer exited before boot; tail={}",
+                &guard[guard.len().saturating_sub(500)..]
+            ));
         }
         thread::sleep(Duration::from_millis(100));
     }
     let t_init = t0.elapsed().as_secs_f64() * 1000.0;
     println!("BS-00 time_to_userspace_ms={t_init:.1}");
 
+    // Give getty a moment before typing commands.
+    thread::sleep(Duration::from_secs(2));
+
     for cmd in [
         "ls /dev/kvm 2>&1\n",
         "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n",
         "ls /home/landen 2>&1 || echo NO_HOST_HOME\n",
     ] {
-        stdin.write_all(cmd.as_bytes()).map_err(|e| e.to_string())?;
-        stdin.flush().map_err(|e| e.to_string())?;
+        stdin
+            .write_all(cmd.as_bytes())
+            .map_err(|e| format!("serial write failed: {e}"))?;
+        stdin
+            .flush()
+            .map_err(|e| format!("serial flush failed: {e}"))?;
         thread::sleep(Duration::from_secs(2));
     }
 
@@ -127,7 +131,7 @@ fn run_checks(vm: &mut LaunchedVm) -> Result<serde_json::Value, String> {
 
     stdin
         .write_all(b"echo hello-from-guest | socat - VSOCK-CONNECT:2:52; echo VS_EXIT=$?\n")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("vsock serial write failed: {e}"))?;
     stdin.flush().map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_secs(3));
 
@@ -138,9 +142,7 @@ fn run_checks(vm: &mut LaunchedVm) -> Result<serde_json::Value, String> {
         println!("vsock_rx={vsock_rx:?}");
     }
 
-    let serial = serial_buf.lock().unwrap().clone();
-    let _ = reader.join();
-
+    let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
     let no_vmm = serial.contains("NO_VMM_PROCS");
     let no_home = serial.contains("NO_HOST_HOME");
@@ -149,7 +151,10 @@ fn run_checks(vm: &mut LaunchedVm) -> Result<serde_json::Value, String> {
     println!("spot_check_host_invisible={}", no_vmm && no_home);
 
     if !(kvm_absent && no_vmm && no_home && vsock_ok) {
-        return Err("one or more spot checks failed".into());
+        return Err(format!(
+            "one or more spot checks failed; serial_tail={}",
+            &serial[serial.len().saturating_sub(800)..]
+        ));
     }
 
     let t_work = t0.elapsed().as_secs_f64() * 1000.0;

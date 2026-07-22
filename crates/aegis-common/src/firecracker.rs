@@ -109,13 +109,18 @@ pub fn vsock_roundtrip(vsock_base: &Path, port: u16, timeout: Duration) -> Resul
     }
 
     let listener = UnixListener::bind(&listen_path)?;
+    listener.set_nonblocking(false)?;
     let (mut conn, _) = listener.accept()?;
     let mut data = Vec::new();
     conn.read_to_end(&mut data)?;
-    conn.write_all(b"pong:")?;
-    conn.write_all(&data)?;
-    conn.shutdown(Shutdown::Write)?;
+    // Guest may close after send; pong write-back is best-effort.
+    let _ = conn.write_all(b"pong:");
+    let _ = conn.write_all(&data);
+    let _ = conn.shutdown(Shutdown::Write);
     let _ = fs::remove_file(&listen_path);
+    if data.is_empty() {
+        return Err(FcError::Request("vsock roundtrip received empty payload".into()));
+    }
     Ok(String::from_utf8_lossy(&data).into_owned())
 }
 
