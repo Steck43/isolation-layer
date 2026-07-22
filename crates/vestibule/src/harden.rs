@@ -7,6 +7,7 @@
 //! - RLIMIT_CORE = 0 (B3 slice 2f)
 //! - SECCOMP **allowlist** (default KILL) — B3 slice 2g + honesty pack
 //!   (arch gate AUDIT_ARCH_X86_64 + reject x32 bit; then allow ladder)
+//! - B3.2e: mmap/mprotect `prot` arg filter — deny `PROT_EXEC` (BPF_JSET)
 //!
 //! cgroup jail remains VISION (may need helper; no sudoers widen).
 
@@ -24,6 +25,8 @@ pub struct HardenReport {
     pub seccomp_deny_dangerous: bool,
     /// True when seccomp default-KILL allowlist installed (2g).
     pub seccomp_allowlist: bool,
+    /// True when mmap/mprotect PROT_EXEC arg filter is installed (2e).
+    pub seccomp_prot_exec_filter: bool,
     /// RLIMIT_CORE soft+hard cleared to 0.
     pub rlimit_core_zero: bool,
 }
@@ -49,6 +52,7 @@ pub fn apply_listener_hardening() -> io::Result<HardenReport> {
         seccomp_deny_exec: seccomp_allowlist,
         seccomp_deny_dangerous: seccomp_allowlist,
         seccomp_allowlist,
+        seccomp_prot_exec_filter: seccomp_allowlist,
         rlimit_core_zero,
     })
 }
@@ -122,6 +126,14 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
     /// X32 ABI syscall numbers set this bit — reject before allow ladder.
     const X32_SYSCALL_BIT: u32 = 0x4000_0000;
 
+    // mmap / mprotect handled with PROT_EXEC arg check (B3.2e) — not blind ALLOW.
+    const NR_MMAP: u32 = 9;
+    const NR_MPROTECT: u32 = 10;
+    /// offsetof(struct seccomp_data, args[2]) — prot for mmap/mprotect.
+    const OFF_ARGS2: u32 = 32;
+    /// linux/mman.h PROT_EXEC
+    const PROT_EXEC: u32 = 0x4;
+
     // Post-bind listener working set only. Intentionally omits exec/ptrace/mount/bpf/…
     const ALLOW: &[u32] = &[
         0,   // read
@@ -130,8 +142,6 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
         5,   // fstat
         7,   // poll
         8,   // lseek
-        9,   // mmap
-        10,  // mprotect
         11,  // munmap
         12,  // brk
         13,  // rt_sigaction
@@ -191,9 +201,9 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
         441, // epoll_pwait2
     ];
 
-    // Arch gate → reject x32 bit → LD nr → allow ladder → KILL.
+    // Arch gate → reject x32 → mmap/mprotect PROT_EXEC check → allow ladder → KILL.
     // Without arch check, i386 compat nr=11 (execve) aliases x86_64 munmap=11.
-    let mut filter: Vec<SockFilter> = Vec::with_capacity(8 + ALLOW.len() * 2);
+    let mut filter: Vec<SockFilter> = Vec::with_capacity(16 + ALLOW.len() * 2);
     // LD arch
     filter.push(SockFilter {
         code: BPF_LD | BPF_W | BPF_ABS,
@@ -235,6 +245,79 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
         jf: 0,
         k: SECCOMP_RET_KILL_PROCESS,
     });
+
+    // mmap (9): if match, fall into prot check (4 insn); else skip those 4.
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: 0,
+        jf: 4,
+        k: NR_MMAP,
+    });
+    filter.push(SockFilter {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: 0,
+        jf: 0,
+        k: OFF_ARGS2,
+    });
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JSET | BPF_K,
+        jt: 0,
+        jf: 1,
+        k: PROT_EXEC,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_KILL_PROCESS,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_ALLOW,
+    });
+
+    // mprotect (10): same prot check.
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: 0,
+        jf: 4,
+        k: NR_MPROTECT,
+    });
+    filter.push(SockFilter {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: 0,
+        jf: 0,
+        k: OFF_ARGS2,
+    });
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JSET | BPF_K,
+        jt: 0,
+        jf: 1,
+        k: PROT_EXEC,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_KILL_PROCESS,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_ALLOW,
+    });
+
+    // After mmap/mprotect paths, A may hold args[2] — reload nr for allow ladder.
+    filter.push(SockFilter {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: 0,
+        jf: 0,
+        k: OFF_NR,
+    });
+
     for &nr in ALLOW {
         filter.push(SockFilter {
             code: BPF_JMP | BPF_JEQ | BPF_K,
@@ -369,6 +452,102 @@ mod tests {
         assert!(
             signaled || (exited && exit_code != 42),
             "expected allowlist to block mount; status={status} signaled={signaled} exit={exit_code}"
+        );
+    }
+
+    #[test]
+    fn seccomp_allows_mmap_mprotect_rw() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            apply_listener_hardening().expect("harden");
+            let p = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    4096,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                    -1,
+                    0,
+                )
+            };
+            if p == libc::MAP_FAILED {
+                unsafe { libc::_exit(1) };
+            }
+            let rc = unsafe { libc::mprotect(p, 4096, libc::PROT_READ | libc::PROT_WRITE) };
+            unsafe { libc::_exit(if rc == 0 { 42 } else { 0 }) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        assert!(
+            libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 42,
+            "expected RW mmap/mprotect to succeed; status={status}"
+        );
+    }
+
+    #[test]
+    fn seccomp_blocks_mprotect_exec() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            apply_listener_hardening().expect("harden");
+            let p = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    4096,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                    -1,
+                    0,
+                )
+            };
+            if p == libc::MAP_FAILED {
+                unsafe { libc::_exit(1) };
+            }
+            let rc = unsafe { libc::mprotect(p, 4096, libc::PROT_READ | libc::PROT_EXEC) };
+            // Surviving with success means filter failed.
+            unsafe { libc::_exit(if rc == 0 { 42 } else { 0 }) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        let signaled = libc::WIFSIGNALED(status);
+        let exited = libc::WIFEXITED(status);
+        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        assert!(
+            signaled || (exited && exit_code != 42),
+            "expected mprotect(PROT_EXEC) blocked; status={status} signaled={signaled} exit={exit_code}"
+        );
+    }
+
+    #[test]
+    fn seccomp_blocks_mmap_exec() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            apply_listener_hardening().expect("harden");
+            let p = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    4096,
+                    libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
+                    libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                    -1,
+                    0,
+                )
+            };
+            unsafe { libc::_exit(if p != libc::MAP_FAILED { 42 } else { 0 }) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        let signaled = libc::WIFSIGNALED(status);
+        let exited = libc::WIFEXITED(status);
+        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        assert!(
+            signaled || (exited && exit_code != 42),
+            "expected mmap(PROT_EXEC) blocked; status={status} signaled={signaled} exit={exit_code}"
         );
     }
 }
