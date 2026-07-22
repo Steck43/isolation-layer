@@ -2,12 +2,11 @@
 
 **Updated:** 2026-07-22
 **Branch:** scaffold
-**Tip:** ba06c89 (B3.2i code; run `git rev-parse --short HEAD` for docs tip)
+**Tip:** 6ea77dd (B3.2j code 0b1718f)
 
 ## CURRENT
 
-B3.2i listener cgroup jail SHIPPED. Prove GREEN · cgroup_jail=true.
-Limits: memory.max=512MiB · pids.max=64. No sudoers.
+B3.2j listener Landlock SHIPPED (code 0b1718f). Prove GREEN · landlock=true · cgroup_jail=true.
 
 ## RECORD table
 
@@ -16,11 +15,12 @@ Limits: memory.max=512MiB · pids.max=64. No sudoers.
 | B3.2d | 2d3c3ed | clear + disposition |
 | Q1 A→B | be475e6 | markers + size_cap |
 | B3.2h | 9e777ce | PROT_EXEC arg filter |
-| **B3.2i** | ba06c89 | listener cgroup memory/pids |
+| B3.2i | ba06c89 | listener cgroup memory/pids |
+| **B3.2j** | 0b1718f | Landlock FS allowlist |
 
 ## Next VISION
 
-Landlock · always-invoked · FS manifest · richer analyzers
+always-invoked · full FS manifest · dedicated vestibule uid · richer analyzers
 
 ## SSH
 
