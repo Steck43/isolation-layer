@@ -15,7 +15,7 @@ Safety lives in the receiver: fetch fingerprint X, recompute, accept only on mat
 | Outside-guest guard (who may put/take) | **RECORD** B3.1a — `HostGuard` host-only ingest |
 | Vestibule → shelf handoff in prove | **RECORD** B3.1a |
 | Disposable inspector VM for suspect bytes | **VISION** — Q0/Q1 path |
-| Wire into Isolation Manager handoff | **VISION** |
+| Wire into Isolation Manager handoff | **RECORD** B3.1b — `handoff` module + CLI |
 
 ## Non-goals (this crate)
 

@@ -191,19 +191,17 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         vestibule_msg.task_id, vestibule_msg.body
     );
 
-    // B3.1a: host-only dropbox handoff — guest never sees shelf; body already schema-validated.
+    // B3.1b: Manager-owned handoff wire (shared with `isolation-manager handoff` CLI).
     let shelf_root = std::env::temp_dir().join(format!(
         "aegis-dropbox-prove-{}",
         std::process::id()
     ));
-    let shelf = dropbox::Shelf::open(&shelf_root).map_err(|e| e.to_string())?;
-    let guard = dropbox::HostGuard::new(shelf);
-    let drop_hash = guard
-        .handoff_roundtrip(vestibule_msg.body.as_bytes())
-        .map_err(|e| format!("dropbox handoff failed: {e}"))?;
+    let handoff = crate::handoff::handoff_trusted_body(&shelf_root, vestibule_msg.body.as_bytes())?;
+    let drop_hash = handoff.hash;
     let dropbox_handoff_ok = drop_hash.len() == 64;
     println!("dropbox_handoff_ok={dropbox_handoff_ok}");
     println!("dropbox_hash={drop_hash}");
+    println!("manager_handoff_ok={dropbox_handoff_ok}");
     let _ = std::fs::remove_dir_all(&shelf_root);
 
 
