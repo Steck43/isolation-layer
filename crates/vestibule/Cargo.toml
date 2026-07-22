@@ -11,4 +11,4 @@ thiserror = "2"
 
 [[bin]]
 name = "vestibule-listen"
-path = "src/bin/vestibule_listen.rs"
+path = "src/vestibule_listen.rs"
