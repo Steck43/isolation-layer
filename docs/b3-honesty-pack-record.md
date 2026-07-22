@@ -15,3 +15,7 @@ Ships after tip `4e76cb1` (2g). Closes consensus Act On from multi-model interro
 - mprotect/mmap PROT_EXEC arg filter
 - Landlock / dedicated vestibule uid
 - Always-invoked brain↔box wiring (API now typed for it)
+
+## Prove gate
+
+**GREEN** 2026-07-22 · tip `f601dff` · operator reinstalled helper · `inspector_verdict_ok` + `host_vmm_hygiene=PASS`.

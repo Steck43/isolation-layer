@@ -1,11 +1,14 @@
 # SESSION-STATE — aegis-box
 
 **Updated:** 2026-07-22 · Cursor eng
-**Tip:** 2df096c on `scaffold` (B3 honesty pack — Act On)
+**Tip:** f601dff on `scaffold` (honesty pack prove GREEN)
 
 ## RECORD
 
-- B3 vsock 2a–2g · B3.1a/1b · B3.2a–2c · **honesty pack** (verdict fail-closed, golden copy, seccomp arch, teardown)
+- B3 vsock 2a–2g · B3.1a/1b · B3.2a–2c · honesty pack Act On (`345c428`)
+- **Prove GREEN** after `f601dff` chown-on-copy fix + operator reinstall of `/usr/local/bin/jailer-launch`
+- Receipts: `inspector_verdict_ok` · `host_vmm_hygiene=PASS` · `host_untouched=PASS` · spot_checks all true
+- Jail: `mgr-178474489697086242-136025` · dropbox/inspector hash `2d2e03c82f7948db88eed0e8a28e5a2c12a5fa04c4668ecb3f768eacb6d2e3e5`
 
 ## Next VISION
 
