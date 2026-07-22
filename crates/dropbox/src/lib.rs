@@ -2,7 +2,10 @@
 //!
 //! Not a standing channel. One side drops bytes; the other takes by hash.
 //! The shelf has no verbs — it cannot execute, inspect, or decide.
-//! Guard / policy stays **outside** this crate.
+//! Host-side allowlist / ingest policy: [`guard::HostGuard`] (never in-guest).
+
+pub mod guard;
+
 
 use std::fs;
 use std::io::Write;
@@ -195,3 +198,5 @@ mod tests {
         let _ = fs::remove_dir_all(shelf.root());
     }
 }
+
+pub use guard::HostGuard;

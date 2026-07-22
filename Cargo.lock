@@ -227,6 +227,7 @@ version = "0.1.0"
 dependencies = [
  "aegis-common",
  "clap",
+ "dropbox",
  "libc",
  "serde",
  "serde_json",

@@ -191,6 +191,22 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         vestibule_msg.task_id, vestibule_msg.body
     );
 
+    // B3.1a: host-only dropbox handoff — guest never sees shelf; body already schema-validated.
+    let shelf_root = std::env::temp_dir().join(format!(
+        "aegis-dropbox-prove-{}",
+        std::process::id()
+    ));
+    let shelf = dropbox::Shelf::open(&shelf_root).map_err(|e| e.to_string())?;
+    let guard = dropbox::HostGuard::new(shelf);
+    let drop_hash = guard
+        .handoff_roundtrip(vestibule_msg.body.as_bytes())
+        .map_err(|e| format!("dropbox handoff failed: {e}"))?;
+    let dropbox_handoff_ok = drop_hash.len() == 64;
+    println!("dropbox_handoff_ok={dropbox_handoff_ok}");
+    println!("dropbox_hash={drop_hash}");
+    let _ = std::fs::remove_dir_all(&shelf_root);
+
+
     let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
     let no_vmm = serial.contains("NO_VMM_PROCS");
@@ -199,7 +215,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
 
-    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok) {
+    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok) {
         return Err(format!(
             "one or more spot checks failed; serial_tail={}",
             &serial[serial.len().saturating_sub(800)..]
@@ -216,11 +232,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         "time_to_workload_ms": (t_work * 10.0).round() / 10.0,
         "vsock_roundtrip_ok": vsock_ok,
         "vestibule_framed_ok": vestibule_ok,
+        "dropbox_handoff_ok": dropbox_handoff_ok,
+        "dropbox_hash": drop_hash,
         "spot_checks": {
             "kvm_absent": kvm_absent,
             "host_invisible": no_vmm && no_home,
             "vsock_ok": vsock_ok,
             "vestibule_framed_ok": vestibule_ok,
+            "dropbox_handoff_ok": dropbox_handoff_ok,
         }
     }))
 }
