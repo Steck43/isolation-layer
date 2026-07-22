@@ -213,6 +213,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     let inspector_stage_ok = staged.hash == drop_hash && staged.blob_path.exists();
     println!("inspector_stage_ok={inspector_stage_ok}");
     println!("inspector_stage_dir={}", staged.stage_dir.display());
+
+    // B3.2b: disposable FC inspector VM consumes stage (hash verify over vsock), then die.
+    let insp = crate::inspect_vm::run_disposable_inspect(&staged)?;
+    let inspector_vm_ok = insp.guest_hash == drop_hash;
+    println!("inspector_vm_ok={inspector_vm_ok}");
+    println!("inspector_vm_jail_id={}", insp.jail_id);
+    println!("inspector_vm_hash={}", insp.guest_hash);
+
     staged
         .dispose()
         .map_err(|e| format!("inspector dispose failed: {e}"))?;
@@ -228,7 +236,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
 
-    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok) {
+    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok && inspector_vm_ok) {
         return Err(format!(
             "one or more spot checks failed; serial_tail={}",
             &serial[serial.len().saturating_sub(800)..]
@@ -248,6 +256,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         "dropbox_handoff_ok": dropbox_handoff_ok,
         "dropbox_hash": drop_hash,
         "inspector_stage_ok": inspector_stage_ok,
+        "inspector_vm_ok": inspector_vm_ok,
         "spot_checks": {
             "kvm_absent": kvm_absent,
             "host_invisible": no_vmm && no_home,
@@ -255,6 +264,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             "vestibule_framed_ok": vestibule_ok,
             "dropbox_handoff_ok": dropbox_handoff_ok,
             "inspector_stage_ok": inspector_stage_ok,
+            "inspector_vm_ok": inspector_vm_ok,
         }
     }))
 }

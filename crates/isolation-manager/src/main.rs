@@ -1,4 +1,5 @@
 mod handoff;
+mod inspect_vm;
 mod launch;
 mod prove;
 
@@ -23,6 +24,8 @@ pub enum Commands {
     Handoff(HandoffArgs),
     /// Host-only: stage dropbox hash into disposable inspect dir (no VM yet).
     InspectStage(InspectStageArgs),
+    /// Disposable FC inspector VM: stage then hash-verify over vsock, teardown.
+    InspectVm(InspectVmArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -61,12 +64,26 @@ pub struct InspectStageArgs {
     pub keep: bool,
 }
 
+#[derive(Debug, Parser)]
+pub struct InspectVmArgs {
+    /// Shelf root that already holds the object.
+    #[arg(long)]
+    pub shelf: PathBuf,
+    /// Expected content hash (sha256 hex).
+    #[arg(long)]
+    pub hash: String,
+    /// Root for disposable stage dirs.
+    #[arg(long)]
+    pub stage_root: PathBuf,
+}
+
 fn main() {
     let cli = Cli::parse();
     let code = match cli.command {
         Commands::Prove(args) => prove::run(args),
         Commands::Handoff(args) => run_handoff(args),
         Commands::InspectStage(args) => run_inspect_stage(args),
+        Commands::InspectVm(args) => run_inspect_vm(args),
     };
     process::exit(code);
 }
@@ -119,6 +136,32 @@ fn run_inspect_stage(args: InspectStageArgs) -> i32 {
         }
         Err(e) => {
             eprintln!("inspect-stage failed: {e}");
+            1
+        }
+    }
+}
+
+fn run_inspect_vm(args: InspectVmArgs) -> i32 {
+    let staged = match inspector::stage_from_shelf(&args.shelf, &args.hash, &args.stage_root) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("inspect-vm stage failed: {e}");
+            return 1;
+        }
+    };
+    println!("inspector_stage_ok=true");
+    match inspect_vm::run_disposable_inspect(&staged) {
+        Ok(r) => {
+            println!("inspector_vm_ok=true");
+            println!("inspector_vm_jail_id={}", r.jail_id);
+            println!("inspector_vm_hash={}", r.guest_hash);
+            println!("inspector_vm_userspace_ms={}", r.time_to_userspace_ms);
+            let _ = staged.dispose();
+            0
+        }
+        Err(e) => {
+            eprintln!("inspect-vm failed: {e}");
+            let _ = staged.dispose();
             1
         }
     }

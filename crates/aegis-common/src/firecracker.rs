@@ -158,3 +158,105 @@ pub fn wait_for_boot(serial: &mut impl Read, timeout: Duration) -> Result<String
         &acc[acc.len().saturating_sub(400)..]
     )))
 }
+
+
+
+
+
+/// Guest must send HELLO first; host then pushes body; guest replies sha256 (B3.2b).
+pub fn vsock_inspect_hash(
+    vsock_base: &Path,
+    port: u16,
+    body: &[u8],
+    timeout: Duration,
+) -> Result<String, FcError> {
+    use std::os::unix::net::UnixListener;
+
+    let listen_path = PathBuf::from(format!("{}_{port}", vsock_base.display()));
+    let deadline = std::time::Instant::now() + timeout;
+    while !vsock_base.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !vsock_base.exists() {
+        return Err(FcError::Request("vsock base socket missing".into()));
+    }
+    if listen_path.exists() {
+        let _ = fs::remove_file(&listen_path);
+    }
+    let listener = UnixListener::bind(&listen_path)?;
+    let mut last_err = String::from("no HELLO from inspector guest");
+
+    while std::time::Instant::now() < deadline {
+        listener.set_nonblocking(true)?;
+        let accepted = listener.accept();
+        listener.set_nonblocking(false)?;
+        let mut conn = match accepted {
+            Ok((c, _)) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        conn.set_read_timeout(Some(Duration::from_secs(10)))?;
+        conn.set_write_timeout(Some(Duration::from_secs(10)))?;
+
+        let mut hello = [0u8; 32];
+        let n = match conn.read(&mut hello) {
+            Ok(0) => {
+                last_err = "empty connect (probe)".into();
+                continue;
+            }
+            Ok(n) => n,
+            Err(e) => {
+                last_err = format!("hello read: {e}");
+                continue;
+            }
+        };
+        if !String::from_utf8_lossy(&hello[..n]).contains("HELLO") {
+            last_err = format!("expected HELLO, got {:?}", &hello[..n]);
+            continue;
+        }
+
+        let len = body.len() as u32;
+        conn.write_all(&len.to_be_bytes())?;
+        conn.write_all(body)?;
+        // Do not shutdown(Write): socat SYSTEM can tear down before guest sendall.
+        conn.flush().ok();
+        conn.set_read_timeout(Some(Duration::from_secs(30)))?;
+        let mut resp = Vec::new();
+        loop {
+            let mut buf = [0u8; 128];
+            match conn.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => resp.extend_from_slice(&buf[..n]),
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break;
+                }
+                Err(e) => {
+                    last_err = format!("hash read: {e}");
+                    break;
+                }
+            }
+            if resp.iter().any(|&b| b == b'\n') {
+                break;
+            }
+        }
+        let s = String::from_utf8_lossy(&resp);
+        let hash = s.lines().next().unwrap_or("").trim().to_string();
+        if hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            let _ = fs::remove_file(&listen_path);
+            return Ok(hash);
+        }
+        last_err = format!("inspector guest hash reply invalid: {s:?}");
+    }
+    let _ = fs::remove_file(&listen_path);
+    Err(FcError::Request(last_err))
+}
+
+
+
+
