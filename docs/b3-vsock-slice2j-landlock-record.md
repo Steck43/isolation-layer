@@ -1,6 +1,6 @@
 # B3.2j — listener Landlock FS allowlist
 
-**Tip:** (fill after commit) on `scaffold`
+**Tip:** 0b1718f on `scaffold`
 **Date:** 2026-07-22  
 **Parent:** AEG-22 · Design: B3.2j Landlock  
 **Closes:** honesty-pack VISION line “Landlock” for host listener
