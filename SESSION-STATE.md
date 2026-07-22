@@ -2,11 +2,12 @@
 
 **Updated:** 2026-07-22
 **Branch:** scaffold
-**Tip:** cb39574
+**Tip:** ba06c89 (B3.2i code; run `git rev-parse --short HEAD` for docs tip)
 
 ## CURRENT
 
-B3.2i listener cgroup jail SHIPPED (code ba06c89 · HEAD cb39574). Prove GREEN · cgroup_jail=true.
+B3.2i listener cgroup jail SHIPPED. Prove GREEN · cgroup_jail=true.
+Limits: memory.max=512MiB · pids.max=64. No sudoers.
 
 ## RECORD table
 
@@ -15,7 +16,7 @@ B3.2i listener cgroup jail SHIPPED (code ba06c89 · HEAD cb39574). Prove GREEN �
 | B3.2d | 2d3c3ed | clear + disposition |
 | Q1 A→B | be475e6 | markers + size_cap |
 | B3.2h | 9e777ce | PROT_EXEC arg filter |
-| **B3.2i** | cb39574 | listener cgroup memory/pids |
+| **B3.2i** | ba06c89 | listener cgroup memory/pids |
 
 ## Next VISION
 
