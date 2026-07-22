@@ -1,0 +1,9 @@
+[package]
+name = "inspector"
+version.workspace = true
+edition.workspace = true
+description = "Host-side disposable stage for dropbox bytes (B3.2a) — not a capable VM"
+
+[dependencies]
+dropbox = { path = "../dropbox" }
+thiserror = "2"

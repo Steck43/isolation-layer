@@ -202,6 +202,21 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("dropbox_handoff_ok={dropbox_handoff_ok}");
     println!("dropbox_hash={drop_hash}");
     println!("manager_handoff_ok={dropbox_handoff_ok}");
+
+    // B3.2a: host disposable inspector stage — retrieve-by-hash, never guest path, dispose.
+    let stage_root = std::env::temp_dir().join(format!(
+        "aegis-inspect-prove-{}",
+        std::process::id()
+    ));
+    let staged = inspector::stage_from_shelf(&shelf_root, &drop_hash, &stage_root)
+        .map_err(|e| format!("inspector stage failed: {e}"))?;
+    let inspector_stage_ok = staged.hash == drop_hash && staged.blob_path.exists();
+    println!("inspector_stage_ok={inspector_stage_ok}");
+    println!("inspector_stage_dir={}", staged.stage_dir.display());
+    staged
+        .dispose()
+        .map_err(|e| format!("inspector dispose failed: {e}"))?;
+    let _ = std::fs::remove_dir_all(&stage_root);
     let _ = std::fs::remove_dir_all(&shelf_root);
 
 
@@ -213,7 +228,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
 
-    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok) {
+    if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok) {
         return Err(format!(
             "one or more spot checks failed; serial_tail={}",
             &serial[serial.len().saturating_sub(800)..]
@@ -232,12 +247,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         "vestibule_framed_ok": vestibule_ok,
         "dropbox_handoff_ok": dropbox_handoff_ok,
         "dropbox_hash": drop_hash,
+        "inspector_stage_ok": inspector_stage_ok,
         "spot_checks": {
             "kvm_absent": kvm_absent,
             "host_invisible": no_vmm && no_home,
             "vsock_ok": vsock_ok,
             "vestibule_framed_ok": vestibule_ok,
             "dropbox_handoff_ok": dropbox_handoff_ok,
+            "inspector_stage_ok": inspector_stage_ok,
         }
     }))
 }

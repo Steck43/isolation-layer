@@ -21,6 +21,8 @@ pub enum Commands {
     Prove(ProveArgs),
     /// Host-only: ingest trusted body bytes into inert dropbox shelf (no guest path).
     Handoff(HandoffArgs),
+    /// Host-only: stage dropbox hash into disposable inspect dir (no VM yet).
+    InspectStage(InspectStageArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -43,11 +45,28 @@ pub struct HandoffArgs {
     pub stdin: bool,
 }
 
+#[derive(Debug, Parser)]
+pub struct InspectStageArgs {
+    /// Shelf root that already holds the object.
+    #[arg(long)]
+    pub shelf: PathBuf,
+    /// Expected content hash (sha256 hex).
+    #[arg(long)]
+    pub hash: String,
+    /// Root for disposable stage dirs (created if needed).
+    #[arg(long)]
+    pub stage_root: PathBuf,
+    /// Keep stage dir (default: dispose after print).
+    #[arg(long)]
+    pub keep: bool,
+}
+
 fn main() {
     let cli = Cli::parse();
     let code = match cli.command {
         Commands::Prove(args) => prove::run(args),
         Commands::Handoff(args) => run_handoff(args),
+        Commands::InspectStage(args) => run_inspect_stage(args),
     };
     process::exit(code);
 }
@@ -76,6 +95,30 @@ fn run_handoff(args: HandoffArgs) -> i32 {
         }
         Err(e) => {
             eprintln!("handoff failed: {e}");
+            1
+        }
+    }
+}
+
+fn run_inspect_stage(args: InspectStageArgs) -> i32 {
+    match inspector::stage_from_shelf(&args.shelf, &args.hash, &args.stage_root) {
+        Ok(staged) => {
+            println!("inspector_stage_ok=true");
+            println!("inspector_hash={}", staged.hash);
+            println!("inspector_bytes={}", staged.bytes_len);
+            println!("inspector_blob={}", staged.blob_path.display());
+            if args.keep {
+                println!("inspector_kept={}", staged.stage_dir.display());
+            } else if let Err(e) = staged.dispose() {
+                eprintln!("dispose failed: {e}");
+                return 1;
+            } else {
+                println!("inspector_disposed=true");
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("inspect-stage failed: {e}");
             1
         }
     }
