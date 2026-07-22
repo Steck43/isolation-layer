@@ -110,7 +110,8 @@ impl LaunchRequest {
 }
 
 pub fn validate_jail_id(jail_id: &str) -> Result<(), ValidationError> {
-    if jail_id.is_empty() || jail_id.len() > 64 {
+    // Min length blocks accidental pkill-style short patterns (even though we no longer pkill -f).
+    if jail_id.len() < 12 || jail_id.len() > 64 {
         return Err(ValidationError::InvalidJailId(jail_id.to_string()));
     }
     let bytes = jail_id.as_bytes();
@@ -178,13 +179,13 @@ mod tests {
 
     #[test]
     fn rejects_bad_jail_id() {
-        for bad in ["", "../x", "bad id", "x/y", &"a".repeat(65)] {
+        for bad in ["", "../x", "bad id", "x/y", "short", &"a".repeat(65)] {
             assert!(
                 validate_jail_id(bad).is_err(),
                 "expected reject for {bad:?}"
             );
         }
-        assert!(validate_jail_id("mgr-abc123").is_ok());
+        assert!(validate_jail_id("mgr-abc123456").is_ok());
     }
 
     #[test]
@@ -193,7 +194,7 @@ mod tests {
         let evil = PathBuf::from("/tmp/evil-vmlinux");
         fs::write(&evil, b"evil").unwrap();
         let err = LaunchRequest::validate(
-            "mgr-test01",
+            "mgr-test00001",
             &evil,
             &rootfs,
             1000,
@@ -212,7 +213,7 @@ mod tests {
         let evil = PathBuf::from("/tmp/evil-rootfs.ext4");
         fs::write(&evil, b"evil").unwrap();
         let err = LaunchRequest::validate(
-            "mgr-test01",
+            "mgr-test00001",
             &kernel,
             &evil,
             1000,
@@ -230,7 +231,7 @@ mod tests {
         let kernel = touch_allowlisted_kernel();
         let rootfs = touch_allowlisted_rootfs();
         let err = LaunchRequest::validate(
-            "mgr-test01",
+            "mgr-test00001",
             &kernel,
             &rootfs,
             9999,
@@ -247,7 +248,7 @@ mod tests {
         let kernel = touch_allowlisted_kernel();
         let rootfs = touch_allowlisted_rootfs();
         let err = LaunchRequest::validate(
-            "mgr-test01",
+            "mgr-test00001",
             &kernel,
             &rootfs,
             1000,
@@ -264,7 +265,7 @@ mod tests {
         let kernel = touch_allowlisted_kernel();
         let rootfs = touch_allowlisted_rootfs();
         let req = LaunchRequest::validate(
-            "mgr-valid01",
+            "mgr-valid0001",
             &kernel,
             &rootfs,
             1000,
@@ -273,7 +274,7 @@ mod tests {
             Some(1000),
         )
         .unwrap();
-        assert_eq!(req.jail_id, "mgr-valid01");
+        assert_eq!(req.jail_id, "mgr-valid0001");
     }
 
     #[test]

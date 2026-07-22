@@ -2,22 +2,35 @@ use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use aegis_common::{assert_host_clean, HostSnapshot};
+use aegis_common::{assert_host_vmm_hygiene, HostSnapshot};
 use serde_json::json;
 
-use crate::launch::{launch_via_helper, teardown_vm};
+use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
+
+fn preflight_honesty_helper() -> Result<(), String> {
+    use std::process::Command;
+    let helper = aegis_common::paths::JAILER_LAUNCH_BIN;
+    let out = Command::new("strings")
+        .arg(helper)
+        .output()
+        .map_err(|e| format!("strings {helper}: {e}"))?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    if !s.contains("copy_rootfs") {
+        return Err(format!(
+            "BLOCKED: installed {helper} lacks copy_rootfs (honesty pack).\nOperator one-liner (updates the already-allowlisted helper binary; not a sudoers widen):\n  sudo install -o root -g root -m 755 ~/isolation-layer/target/release/jailer-launch {helper}\nThen: cargo run -q -p isolation-manager -- prove"
+        ));
+    }
+    Ok(())
+}
+
 pub fn run(args: ProveArgs) -> i32 {
-    let jail_id = args.jail_id.unwrap_or_else(|| {
-        format!(
-            "mgr-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        )
-    });
+    if let Err(e) = preflight_honesty_helper() {
+        eprintln!("{e}");
+        return 2;
+    }
+    let jail_id = args.jail_id.unwrap_or_else(|| fresh_jail_id("mgr"));
 
     let before = match HostSnapshot::capture() {
         Ok(s) => s,
@@ -37,7 +50,7 @@ pub fn run(args: ProveArgs) -> i32 {
 
     let result = run_checks(&mut vm);
     teardown_vm(&mut vm);
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(3));
 
     let after = match HostSnapshot::capture() {
         Ok(s) => s,
@@ -47,9 +60,18 @@ pub fn run(args: ProveArgs) -> i32 {
         }
     };
 
-    match assert_host_clean(&before, &after) {
-        Ok(()) => println!("host_untouched=PASS"),
+    match assert_host_vmm_hygiene(&before, &after) {
+        Ok(()) => {
+            // Honest name: VMM residue + golden artifact hashes (not full FS manifest).
+            println!("host_vmm_hygiene=PASS");
+            println!("host_untouched=PASS"); // alias for prior receipts
+            println!(
+                "golden_rootfs_sha256={}",
+                after.golden_rootfs_sha256
+            );
+        }
         Err(e) => {
+            eprintln!("host_vmm_hygiene=FAIL: {e}");
             eprintln!("host_untouched=FAIL: {e}");
             return 1;
         }
@@ -84,7 +106,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             if guard.len() > 200_000 {
                 return Err(format!(
                     "boot failed; tail={}",
-                    &guard[guard.len().saturating_sub(500)..]
+                    aegis_common::firecracker::utf8_tail(&guard, 500)
                 ));
             }
         }
@@ -92,14 +114,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             let guard = vm.serial_buf.lock().unwrap();
             return Err(format!(
                 "boot timeout; tail={}",
-                &guard[guard.len().saturating_sub(500)..]
+                aegis_common::firecracker::utf8_tail(&guard, 500)
             ));
         }
         if vm.child.try_wait().ok().flatten().is_some() {
             let guard = vm.serial_buf.lock().unwrap();
             return Err(format!(
                 "jailer exited before boot; tail={}",
-                &guard[guard.len().saturating_sub(500)..]
+                aegis_common::firecracker::utf8_tail(&guard, 500)
             ));
         }
         thread::sleep(Duration::from_millis(100));
@@ -196,9 +218,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         "aegis-dropbox-prove-{}",
         std::process::id()
     ));
-    let handoff = crate::handoff::handoff_trusted_body(&shelf_root, vestibule_msg.body.as_bytes())?;
-    let drop_hash = handoff.hash;
-    let dropbox_handoff_ok = drop_hash.len() == 64;
+    let handoff = crate::handoff::handoff_result_message(&shelf_root, &vestibule_msg)?;
+    let drop_hash = handoff.hash.clone();
+    // Independent post-condition: retrieve + re-hash (not just len==64).
+    let roundtrip = dropbox::Shelf::open(&shelf_root)
+        .and_then(|s| s.take(&drop_hash))
+        .map_err(|e| format!("dropbox retrieve after handoff: {e}"))?;
+    let dropbox_handoff_ok = dropbox::content_hash(&roundtrip) == drop_hash
+        && roundtrip == vestibule_msg.body.as_bytes();
     println!("dropbox_handoff_ok={dropbox_handoff_ok}");
     println!("dropbox_hash={drop_hash}");
     println!("manager_handoff_ok={dropbox_handoff_ok}");
@@ -214,11 +241,16 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     println!("inspector_stage_ok={inspector_stage_ok}");
     println!("inspector_stage_dir={}", staged.stage_dir.display());
 
-    // B3.2b: disposable FC inspector VM consumes stage (hash verify over vsock), then die.
+    // Tear down prove VM before disposable inspector (single-guest surface for inspect receipt).
+    vm.stdin = Some(stdin);
+    teardown_vm(vm);
+    thread::sleep(Duration::from_secs(2));
+
+    // B3.2b/2c: disposable FC inspector — guest inspect_verdict JSON, deny_unknown_fields.
     let insp = crate::inspect_vm::run_disposable_inspect(&staged)?;
     let inspector_vm_ok = insp.guest_hash == drop_hash;
-    let inspector_verdict_ok =
-        inspector_vm_ok && insp.verdict_outcome == "hash_ok";
+    // Verdict schema enforced inside run_disposable_inspect (parse_verdict_line).
+    let inspector_verdict_ok = inspector_vm_ok && insp.verdict_outcome == "hash_ok";
     println!("inspector_vm_ok={inspector_vm_ok}");
     println!("inspector_verdict_ok={inspector_verdict_ok}");
     println!("inspector_verdict_outcome={}", insp.verdict_outcome);
@@ -243,7 +275,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     if !(kvm_absent && no_vmm && no_home && vsock_ok && vestibule_ok && dropbox_handoff_ok && inspector_stage_ok && inspector_vm_ok && inspector_verdict_ok) {
         return Err(format!(
             "one or more spot checks failed; serial_tail={}",
-            &serial[serial.len().saturating_sub(800)..]
+            aegis_common::firecracker::utf8_tail(&serial, 800)
         ));
     }
 

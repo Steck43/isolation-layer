@@ -9,7 +9,10 @@ use vestibule::{
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  vestibule-listen <uds-path> [--enforce|--disabled] [--harden] [--reject-log <path>]\n  vestibule-listen --vsock-base <path> <port> [--enforce|--disabled] [--harden] [--reject-log <path>]"
+        "usage:\n\
+  vestibule-listen <uds-path> [--enforce|--disabled] [--harden|--no-harden] [--reject-log <path>]\n\
+  vestibule-listen --vsock-base <path> <port> [--enforce|--disabled] [--harden|--no-harden] [--reject-log <path>]\n\
+defaults: --enforce --harden (production-safe). Use --no-harden / --disabled only for negative tests."
     );
     process::exit(2);
 }
@@ -21,7 +24,7 @@ fn main() {
     }
 
     let mut mode = ParseMode::Enforce;
-    let mut harden = false;
+    let mut harden = true; // default ON (honesty pack)
     let mut reject_log: Option<PathBuf> = None;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
@@ -30,6 +33,7 @@ fn main() {
             "--enforce" => mode = ParseMode::Enforce,
             "--disabled" => mode = ParseMode::Disabled,
             "--harden" => harden = true,
+            "--no-harden" => harden = false,
             "--reject-log" => {
                 i += 1;
                 if i >= args.len() {

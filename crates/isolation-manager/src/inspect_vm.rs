@@ -1,47 +1,46 @@
-//! Disposable Firecracker inspector VM (B3.2b).
+//! Disposable Firecracker inspector VM (B3.2b + honesty pack).
 //!
 //! Consumes a host `StagedBlob`: boot a one-shot jailed microVM, push staged
-//! bytes over vsock, guest returns inspect_verdict JSON (hash_ok), tear down. Never the mailbox.
-//! Guest judgment is Q0 hash floor only — no malware/policy outcomes yet.
+//! bytes over vsock, guest returns inspect_verdict JSON (hash_ok), tear down.
+//! Never the mailbox. Hot path parses guest JSON with `parse_verdict_line`
+//! (`deny_unknown_fields`) — no bare-hex, no host-side verdict fabrication.
 
 use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use inspector::StagedBlob;
+use inspector::{parse_verdict_line, InspectOutcome, StagedBlob};
 
-use crate::launch::{launch_via_helper, teardown_vm};
+use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 
 #[derive(Debug, Clone)]
 pub struct InspectVmReport {
     pub jail_id: String,
+    #[allow(dead_code)]
     pub expected_hash: String,
     pub guest_hash: String,
     pub verdict_outcome: String,
     pub time_to_userspace_ms: f64,
 }
 
-/// Launch a disposable inspector VM, push staged bytes, verify guest hash, teardown.
+/// Launch a disposable inspector VM, push staged bytes, verify guest verdict, teardown.
 pub fn run_disposable_inspect(staged: &StagedBlob) -> Result<InspectVmReport, String> {
     let body = std::fs::read(&staged.blob_path).map_err(|e| e.to_string())?;
     if dropbox::content_hash(&body) != staged.hash {
         return Err("staged blob hash mismatch before VM".into());
     }
 
-    let jail_id = format!(
-        "insp-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    );
+    let jail_id = fresh_jail_id("insp");
 
     let mut vm = launch_via_helper(&jail_id)?;
     let result = run_inspect_body(&mut vm, staged, &body);
     if let Err(ref e) = result {
         let ser = vm.serial_buf.lock().unwrap().clone();
         eprintln!("inspector_fail={e}");
-        eprintln!("inspector_serial_tail={}", &ser[ser.len().saturating_sub(1200)..]);
+        eprintln!(
+            "inspector_serial_tail={}",
+            aegis_common::firecracker::utf8_tail(&ser, 1200)
+        );
     }
     teardown_vm(&mut vm);
     thread::sleep(Duration::from_secs(1));
@@ -69,7 +68,7 @@ fn run_inspect_body(
             let guard = vm.serial_buf.lock().unwrap();
             return Err(format!(
                 "inspector boot timeout; tail={}",
-                &guard[guard.len().saturating_sub(400)..]
+                aegis_common::firecracker::utf8_tail(&guard, 400)
             ));
         }
         if vm.child.try_wait().ok().flatten().is_some() {
@@ -84,15 +83,21 @@ fn run_inspect_body(
     let vsock_base = vm.vsock_uds.clone();
     let body_owned = body.to_vec();
     let handle = thread::spawn(move || {
-        aegis_common::firecracker::vsock_inspect_hash(
+        let harden = || {
+            vestibule::apply_listener_hardening()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        };
+        aegis_common::firecracker::vsock_inspect_reply(
             &vsock_base,
             54,
             &body_owned,
             Duration::from_secs(45),
+            Some(&harden),
         )
     });
 
-    // base64 script (HELLO then hash) + socat SYSTEM path-only.
+    // base64 script: HELLO then inspect_verdict JSON
     let guest_cmd = concat!(
         "echo aW1wb3J0IHN0cnVjdCxzeXMsaGFzaGxpYixqc29uCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGInSEVMTE9cbicpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkKaD1zeXMuc3RkaW4uYnVmZmVyLnJlYWQoNCkKbj1zdHJ1Y3QudW5wYWNrKCc+SScsaClbMF0KYj1zeXMuc3RkaW4uYnVmZmVyLnJlYWQobikKZD1oYXNobGliLnNoYTI1NihiKS5oZXhkaWdlc3QoKQpsaW5lPWpzb24uZHVtcHMoeyJraW5kIjoiaW5zcGVjdF92ZXJkaWN0IiwiY29udGVudF9oYXNoIjpkLCJvdXRjb21lIjoiaGFzaF9vayJ9LHNlcGFyYXRvcnM9KCcsJywnOicpKSsnXG4nCnN5cy5zdGRvdXQuYnVmZmVyLndyaXRlKGxpbmUuZW5jb2RlKCkpCnN5cy5zdGRvdXQuYnVmZmVyLmZsdXNoKCkK | base64 -d > /tmp/insp_hash.py && ",
         "socat VSOCK-CONNECT:2:54 SYSTEM:'python3 /tmp/insp_hash.py' ; ",
@@ -107,31 +112,34 @@ fn run_inspect_body(
     vm.stdin = Some(stdin);
     thread::sleep(Duration::from_millis(500));
 
-    let guest_hash = handle
+    let reply_line = handle
         .join()
         .unwrap()
         .map_err(|e| format!("inspector vsock failed: {e}"))?;
 
-    if guest_hash != staged.hash {
+    let verdict = parse_verdict_line(&reply_line)
+        .map_err(|e| format!("inspector verdict schema: {e}; line={reply_line:?}"))?;
+    if verdict.outcome != InspectOutcome::HashOk {
+        return Err(format!("unexpected inspect outcome {:?}", verdict.outcome));
+    }
+    if verdict.content_hash != staged.hash {
         return Err(format!(
             "inspector hash mismatch: expected {} guest {}",
-            staged.hash, guest_hash
+            staged.hash, verdict.content_hash
         ));
     }
 
-    // Schema floor: guest must have spoken inspect_verdict / hash_ok (parsed upstream).
-    let verdict = inspector::InspectVerdict::hash_ok(&guest_hash);
-    verdict
-        .validate()
-        .map_err(|e| format!("inspector verdict invalid: {e}"))?;
+    let outcome = match verdict.outcome {
+        InspectOutcome::HashOk => "hash_ok",
+    };
 
     println!("inspector_vm_expected={}", staged.hash);
-    println!("inspector_verdict_outcome=hash_ok");
+    println!("inspector_verdict_outcome={outcome}");
     Ok(InspectVmReport {
         jail_id: vm.jail_id.clone(),
         expected_hash: staged.hash.clone(),
-        guest_hash,
-        verdict_outcome: "hash_ok".into(),
+        guest_hash: verdict.content_hash,
+        verdict_outcome: outcome.into(),
         time_to_userspace_ms: (t_init * 10.0).round() / 10.0,
     })
 }

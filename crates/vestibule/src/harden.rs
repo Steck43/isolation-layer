@@ -5,8 +5,8 @@
 //! - PR_SET_NO_NEW_PRIVS
 //! - PR_SET_DUMPABLE = 0
 //! - RLIMIT_CORE = 0 (B3 slice 2f)
-//! - SECCOMP **allowlist** (default KILL) — B3 slice 2g
-//!   (supersedes 2e/2f deny-dangerous; those syscalls stay denied by omission)
+//! - SECCOMP **allowlist** (default KILL) — B3 slice 2g + honesty pack
+//!   (arch gate AUDIT_ARCH_X86_64 + reject x32 bit; then allow ladder)
 //!
 //! cgroup jail remains VISION (may need helper; no sudoers widen).
 
@@ -116,6 +116,11 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
     const PR_SET_SECCOMP: i32 = 22;
     const SECCOMP_MODE_FILTER: i32 = 2;
     const OFF_NR: u32 = 0;
+    const OFF_ARCH: u32 = 4;
+    /// linux/audit.h AUDIT_ARCH_X86_64
+    const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+    /// X32 ABI syscall numbers set this bit — reject before allow ladder.
+    const X32_SYSCALL_BIT: u32 = 0x4000_0000;
 
     // Post-bind listener working set only. Intentionally omits exec/ptrace/mount/bpf/…
     const ALLOW: &[u32] = &[
@@ -186,13 +191,49 @@ fn install_allowlist_seccomp() -> io::Result<bool> {
         441, // epoll_pwait2
     ];
 
-    // LD nr; for each allow: JEQ → ALLOW else fall through; final KILL.
-    let mut filter: Vec<SockFilter> = Vec::with_capacity(2 + ALLOW.len() * 2);
+    // Arch gate → reject x32 bit → LD nr → allow ladder → KILL.
+    // Without arch check, i386 compat nr=11 (execve) aliases x86_64 munmap=11.
+    let mut filter: Vec<SockFilter> = Vec::with_capacity(8 + ALLOW.len() * 2);
+    // LD arch
+    filter.push(SockFilter {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: 0,
+        jf: 0,
+        k: OFF_ARCH,
+    });
+    // JEQ x86_64 → skip kill (jt=1); else fall through to KILL (jf=0)
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: 1,
+        jf: 0,
+        k: AUDIT_ARCH_X86_64,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_KILL_PROCESS,
+    });
+    // LD nr
     filter.push(SockFilter {
         code: BPF_LD | BPF_W | BPF_ABS,
         jt: 0,
         jf: 0,
         k: OFF_NR,
+    });
+    // JSET x32 bit → KILL (jt=0 fallthrough), else skip kill (jf=1)
+    const BPF_JSET: u16 = 0x40;
+    filter.push(SockFilter {
+        code: BPF_JMP | BPF_JSET | BPF_K,
+        jt: 0,
+        jf: 1,
+        k: X32_SYSCALL_BIT,
+    });
+    filter.push(SockFilter {
+        code: BPF_RET | BPF_K,
+        jt: 0,
+        jf: 0,
+        k: SECCOMP_RET_KILL_PROCESS,
     });
     for &nr in ALLOW {
         filter.push(SockFilter {
@@ -257,7 +298,7 @@ mod tests {
         let pid = unsafe { libc::fork() };
         assert!(pid >= 0, "fork failed");
         if pid == 0 {
-            let _ = apply_listener_hardening();
+            apply_listener_hardening().expect("harden must install");
             let status = Command::new("/bin/true").status();
             let code = match status {
                 Ok(s) if s.success() => 42,

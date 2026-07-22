@@ -115,6 +115,7 @@ fn valid_opaque_filename(s: &str) -> bool {
     true
 }
 
+#[allow(dead_code)]
 fn nesting_depth(bytes: &[u8]) -> usize {
     let mut depth = 0usize;
     let mut max = 0usize;

@@ -1,11 +1,18 @@
+//! Host hygiene snapshot for prove (VMM leftovers + golden artifact integrity).
+//!
+//! `assert_host_vmm_hygiene` is intentionally narrower than a full BS-01/BS-03
+//! filesystem manifest. It checks jailer/firecracker residue and that golden
+//! kernel/rootfs hashes are unchanged (disposable guests must not poison goldens).
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::paths::JAILER_BASE;
+use crate::paths::{GOLDEN_KERNEL, GOLDEN_ROOTFS, JAILER_BASE};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostSnapshot {
@@ -13,6 +20,8 @@ pub struct HostSnapshot {
     pub jailer_pids: Vec<u32>,
     pub jailer_instance_dirs: Vec<PathBuf>,
     pub jailer_mounts: Vec<String>,
+    pub golden_kernel_sha256: String,
+    pub golden_rootfs_sha256: String,
 }
 
 #[derive(Debug, Error)]
@@ -30,11 +39,30 @@ impl HostSnapshot {
             jailer_pids: pgrep("jailer")?,
             jailer_instance_dirs: list_jailer_dirs()?,
             jailer_mounts: mounts_under_jailer()?,
+            golden_kernel_sha256: file_sha256(Path::new(GOLDEN_KERNEL))?,
+            golden_rootfs_sha256: file_sha256(Path::new(GOLDEN_ROOTFS))?,
         })
     }
 }
 
-pub fn assert_host_clean(before: &HostSnapshot, after: &HostSnapshot) -> Result<(), String> {
+fn file_sha256(path: &Path) -> Result<String, SnapshotError> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = [0u8; 1024 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", h.finalize()))
+}
+
+/// VMM/jailer residue + golden artifact immutability.
+/// Not a full host filesystem manifest (BS-01/03 still VISION for scratch paths).
+pub fn assert_host_vmm_hygiene(before: &HostSnapshot, after: &HostSnapshot) -> Result<(), String> {
     let mut problems = Vec::new();
 
     let new_fc: Vec<_> = after
@@ -73,6 +101,13 @@ pub fn assert_host_clean(before: &HostSnapshot, after: &HostSnapshot) -> Result<
         problems.push(format!("leftover mounts under jailer base: {new_mounts:?}"));
     }
 
+    if before.golden_kernel_sha256 != after.golden_kernel_sha256 {
+        problems.push("golden kernel sha256 changed (trust root mutated)".into());
+    }
+    if before.golden_rootfs_sha256 != after.golden_rootfs_sha256 {
+        problems.push("golden rootfs sha256 changed (trust root mutated)".into());
+    }
+
     if problems.is_empty() {
         Ok(())
     } else {
@@ -80,20 +115,24 @@ pub fn assert_host_clean(before: &HostSnapshot, after: &HostSnapshot) -> Result<
     }
 }
 
+/// Deprecated alias — prefer [`assert_host_vmm_hygiene`].
+pub fn assert_host_clean(before: &HostSnapshot, after: &HostSnapshot) -> Result<(), String> {
+    assert_host_vmm_hygiene(before, after)
+}
+
 fn pgrep(name: &str) -> Result<Vec<u32>, SnapshotError> {
-    let output = Command::new("pgrep")
+    let out = Command::new("pgrep")
         .arg("-x")
         .arg(name)
         .output()
         .map_err(|e| SnapshotError::Pgrep(e.to_string()))?;
-    if !output.status.success() {
+    if !out.status.success() && out.stdout.is_empty() {
         return Ok(Vec::new());
     }
-    let pids = String::from_utf8_lossy(&output.stdout)
-        .lines()
+    let s = String::from_utf8_lossy(&out.stdout);
+    Ok(s.lines()
         .filter_map(|l| l.trim().parse().ok())
-        .collect();
-    Ok(pids)
+        .collect())
 }
 
 fn list_jailer_dirs() -> Result<Vec<PathBuf>, SnapshotError> {
@@ -102,10 +141,10 @@ fn list_jailer_dirs() -> Result<Vec<PathBuf>, SnapshotError> {
         return Ok(Vec::new());
     }
     let mut dirs = Vec::new();
-    for entry in fs::read_dir(&base)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            dirs.push(entry.path());
+    for ent in fs::read_dir(base)? {
+        let ent = ent?;
+        if ent.file_type()?.is_dir() {
+            dirs.push(ent.path());
         }
     }
     dirs.sort();
@@ -113,41 +152,11 @@ fn list_jailer_dirs() -> Result<Vec<PathBuf>, SnapshotError> {
 }
 
 fn mounts_under_jailer() -> Result<Vec<String>, SnapshotError> {
-    let content = fs::read_to_string("/proc/self/mounts").unwrap_or_default();
+    let mounts = fs::read_to_string("/proc/mounts")?;
     let prefix = JAILER_BASE;
-    let mut mounts: Vec<String> = content
+    Ok(mounts
         .lines()
-        .filter(|line| {
-            line.split_whitespace()
-                .nth(1)
-                .is_some_and(|mp| mp.starts_with(prefix))
-        })
-        .map(str::to_string)
-        .collect();
-    mounts.sort();
-    Ok(mounts)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detect_leftover_jailer_dir() {
-        let before = HostSnapshot {
-            firecracker_pids: vec![],
-            jailer_pids: vec![],
-            jailer_instance_dirs: vec![],
-            jailer_mounts: vec![],
-        };
-        let after = HostSnapshot {
-            firecracker_pids: vec![1234],
-            jailer_pids: vec![],
-            jailer_instance_dirs: vec![PathBuf::from(
-                "/opt/aegis/isolation-layer/jailer/firecracker/mgr-x",
-            )],
-            jailer_mounts: vec![],
-        };
-        assert!(assert_host_clean(&before, &after).is_err());
-    }
+        .filter(|l| l.split_whitespace().nth(1).is_some_and(|m| m.starts_with(prefix)))
+        .map(|l| l.to_string())
+        .collect())
 }

@@ -8,6 +8,17 @@ use std::time::Duration;
 use aegis_common::paths::{GOLDEN_KERNEL, GOLDEN_ROOTFS, JAILER_LAUNCH_BIN};
 use aegis_common::validate::LaunchRequest;
 
+/// Unique jail id: `{prefix}-{nanos}-{pid}` (min length for validate_jail_id).
+pub fn fresh_jail_id(prefix: &str) -> String {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    format!("{prefix}-{n}-{pid}")
+}
+
+
 #[derive(Debug)]
 pub struct LaunchedVm {
     pub jail_id: String,
@@ -156,24 +167,9 @@ pub fn teardown_vm(vm: &mut LaunchedVm) {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    // Kill the helper child we spawned — never `pkill -f` (pattern can match unrelated PIDs).
     let _ = vm.child.kill();
     let _ = vm.child.wait();
-
-    let pattern = vm.jail_id.clone();
-    let _ = Command::new("pkill")
-        .args(["-f", "--", &pattern])
-        .status();
-    for _ in 0..50 {
-        let still = Command::new("pgrep")
-            .args(["-f", "--", &pattern])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !still {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
 
     let helper = resolve_helper_path();
     let status = Command::new("sudo")
@@ -198,6 +194,8 @@ pub fn teardown_vm(vm: &mut LaunchedVm) {
 }
 
 fn resolve_helper_path() -> PathBuf {
+    // Sudoers allowlists only JAILER_LAUNCH_BIN. Install honesty-pack builds with:
+    //   sudo install -o root -g root -m 755 target/release/jailer-launch /usr/local/bin/jailer-launch
     let installed = PathBuf::from(JAILER_LAUNCH_BIN);
     if installed.exists() {
         return installed;
@@ -214,3 +212,5 @@ fn resolve_helper_path() -> PathBuf {
     }
     installed
 }
+
+

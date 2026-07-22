@@ -1,12 +1,13 @@
-//! Manager-owned dropbox handoff (B3.1b).
+//! Manager-owned dropbox handoff (B3.1b + honesty pack).
 //!
-//! Vestibule validates schema; the Manager alone may ingest body bytes into
-//! the inert shelf. Guest never sees the shelf path. This module is the
-//! Isolation Manager wire — not a prove-only side effect.
+//! Always-invoked brain↔box MUST use [`handoff_result_message`] after
+//! `ParseMode::Enforce`. [`handoff_trusted_body`] is for post-vestibule bytes
+//! only — it does not re-parse schema (convention, not a gate).
 
 use std::path::{Path, PathBuf};
 
 use dropbox::{HostGuard, Shelf};
+use vestibule::ResultMessage;
 
 #[derive(Debug, Clone)]
 pub struct HandoffResult {
@@ -15,7 +16,23 @@ pub struct HandoffResult {
     pub bytes_len: usize,
 }
 
-/// Ingest trusted (post-vestibule) body bytes into a shelf under `shelf_root`.
+/// Ingest a vestibule-validated `ResultMessage` body into the inert shelf.
+pub fn handoff_result_message(
+    shelf_root: impl AsRef<Path>,
+    msg: &ResultMessage,
+) -> Result<HandoffResult, String> {
+    if msg.kind != "result" {
+        return Err(format!(
+            "handoff_result_message refused kind={:?} (want result)",
+            msg.kind
+        ));
+    }
+    handoff_trusted_body(shelf_root, msg.body.as_bytes())
+}
+
+/// Ingest body bytes already attested by the caller (post-vestibule Enforce).
+///
+/// Prefer [`handoff_result_message`] at the always-invoked boundary.
 pub fn handoff_trusted_body(
     shelf_root: impl AsRef<Path>,
     body: &[u8],

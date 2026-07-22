@@ -4,7 +4,7 @@
 - `crates/inspector/src/verdict.rs`: `InspectVerdict` + `InspectOutcome::HashOk` (`deny_unknown_fields`)
 - Guest inspector script replies with one JSON line:
   `{"kind":"inspect_verdict","content_hash":"<sha256>","outcome":"hash_ok"}`
-- Host vsock path accepts verdict JSON (bare hex kept one revision)
+- Host vsock path **requires** verdict JSON via `parse_verdict_line` (bare hex removed in honesty pack)
 - Prove / `inspect-vm` emit `inspector_verdict_ok=true`
 
 ## Explicitly not in 2c

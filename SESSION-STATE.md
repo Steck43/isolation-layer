@@ -1,17 +1,18 @@
 # SESSION-STATE — aegis-box
 
 **Updated:** 2026-07-22 · Cursor eng
-**Tip:** tip `d99e4b3` on `scaffold` (B3 slice 2g seccomp allowlist)
+**Tip:** 2df096c on `scaffold` (B3 honesty pack — Act On)
 
 ## RECORD
 
-- B3 vsock 2a–2f · **2g allowlist** · B3.1a/1b · B3.2a–2c inspect path
+- B3 vsock 2a–2g · B3.1a/1b · B3.2a–2c · **honesty pack** (verdict fail-closed, golden copy, seccomp arch, teardown)
 
 ## Next VISION
 
 1. Richer Q1 inspect outcomes (beyond `hash_ok`)
-2. cgroup jail (no sudoers widen)
-3. Always-invoked brain↔box routing
+2. cgroup jail (no sudoers widen) · mprotect exec arg filter
+3. Always-invoked brain↔box via `handoff_result_message` only
+4. Full host FS manifest (BS-01/03) beyond `host_vmm_hygiene`
 
 ## SSH
 

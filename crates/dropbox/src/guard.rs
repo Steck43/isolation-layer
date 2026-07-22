@@ -46,11 +46,9 @@ impl HostGuard {
             ));
         }
         let canon = fs::canonicalize(path).map_err(|e| DropError::Io(e.to_string()))?;
-        let allowed = self.allowed_roots.iter().any(|root| {
-            match fs::canonicalize(root) {
-                Ok(r) => canon.starts_with(&r),
-                Err(_) => false,
-            }
+        let allowed = self.allowed_roots.iter().any(|root| match fs::canonicalize(root) {
+            Ok(r) => canon.starts_with(&r),
+            Err(_) => false,
         });
         if !allowed {
             return Err(DropError::Io(format!(
@@ -58,16 +56,27 @@ impl HostGuard {
                 canon.display()
             )));
         }
-        let meta = fs::metadata(&canon).map_err(|e| DropError::Io(e.to_string()))?;
+        // Open then fstat-equivalent via metadata on the same path immediately before read.
+        // Full O_NOFOLLOW needs rustix; this closes the obvious TOCTOU by reading once into memory
+        // under exclusive open options (create=false) and size-checking the buffer.
+        let mut file = fs::File::open(&canon).map_err(|e| DropError::Io(e.to_string()))?;
+        let meta = file.metadata().map_err(|e| DropError::Io(e.to_string()))?;
         if !meta.is_file() {
             return Err(DropError::Io("ingest_file denied: not a file".into()));
         }
         if meta.len() as usize > MAX_DROP_BYTES {
             return Err(DropError::TooLarge);
         }
-        let bytes = fs::read(&canon)?;
+        use std::io::Read;
+        let mut bytes = Vec::with_capacity(meta.len() as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|e| DropError::Io(e.to_string()))?;
+        if bytes.len() > MAX_DROP_BYTES {
+            return Err(DropError::TooLarge);
+        }
         self.shelf.put(&bytes)
     }
+
 
     /// Retrieve by expected hash (exact match only).
     pub fn retrieve(&self, expected_hash: &str) -> Result<Vec<u8>, DropError> {

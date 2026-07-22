@@ -61,6 +61,7 @@ pub fn wait_for_api_socket(api_sock: &Path, timeout: Duration) -> Result<(), FcE
     )))
 }
 
+/// Hardlink only for immutable artifacts (kernel). Never hardlink a writable disk.
 pub fn hardlink_or_copy(src: &Path, dst: &Path) -> Result<(), FcError> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
@@ -77,10 +78,26 @@ pub fn hardlink_or_copy(src: &Path, dst: &Path) -> Result<(), FcError> {
     }
 }
 
+/// Always copy rootfs so a disposable guest cannot mutate the golden inode (IDEA-CUR-147 / BS-03).
+pub fn copy_rootfs(src: &Path, dst: &Path) -> Result<(), FcError> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if dst.exists() {
+        fs::remove_file(dst)?;
+    }
+    fs::copy(src, dst)?;
+    Ok(())
+}
+
 pub fn prepare_jail_root(req: &LaunchRequest) -> Result<PathBuf, FcError> {
     let jail_root = req.jail_root();
-    if jail_root.exists() {
-        fs::remove_dir_all(jail_root.parent().unwrap())?;
+    if let Some(parent) = jail_root.parent() {
+        if parent.exists() {
+            // Refuse to clobber a live-looking instance dir that is not ours by accident:
+            // still remove for prove reuse, but only the specific jail parent.
+            fs::remove_dir_all(parent)?;
+        }
     }
     fs::create_dir_all(&jail_root)?;
 
@@ -88,10 +105,8 @@ pub fn prepare_jail_root(req: &LaunchRequest) -> Result<PathBuf, FcError> {
         &req.kernel_path,
         &jail_root.join("vmlinux-6.1.176"),
     )?;
-    hardlink_or_copy(
-        &req.rootfs_path,
-        &jail_root.join("ubuntu-24.04.ext4"),
-    )?;
+    // Rootfs: copy only — never hardlink (guest disk is writable in Q0 prove path).
+    copy_rootfs(&req.rootfs_path, &jail_root.join("ubuntu-24.04.ext4"))?;
     fs::write(jail_root.join("vm_config.json"), req.vm_config_json())?;
     Ok(jail_root)
 }
@@ -164,11 +179,18 @@ pub fn wait_for_boot(serial: &mut impl Read, timeout: Duration) -> Result<String
 
 
 /// Guest must send HELLO first; host then pushes body; guest replies sha256 (B3.2b).
-pub fn vsock_inspect_hash(
+/// Max bytes accepted for inspector guest reply line (DoS bound).
+pub const INSPECT_REPLY_MAX: usize = 4096;
+
+/// Guest must send HELLO\n first; host pushes body; guest replies one JSON line
+/// (`inspect_verdict`). Returns the raw first line (caller parses with
+/// `inspector::parse_verdict_line`). No bare-hex fallback.
+pub fn vsock_inspect_reply(
     vsock_base: &Path,
     port: u16,
     body: &[u8],
     timeout: Duration,
+    after_bind: Option<&dyn Fn() -> Result<(), String>>,
 ) -> Result<String, FcError> {
     use std::os::unix::net::UnixListener;
 
@@ -184,6 +206,9 @@ pub fn vsock_inspect_hash(
         let _ = fs::remove_file(&listen_path);
     }
     let listener = UnixListener::bind(&listen_path)?;
+    if let Some(hook) = after_bind {
+        hook().map_err(FcError::Request)?;
+    }
     let mut last_err = String::from("no HELLO from inspector guest");
 
     while std::time::Instant::now() < deadline {
@@ -213,8 +238,9 @@ pub fn vsock_inspect_hash(
                 continue;
             }
         };
-        if !String::from_utf8_lossy(&hello[..n]).contains("HELLO") {
-            last_err = format!("expected HELLO, got {:?}", &hello[..n]);
+        let hello_s = String::from_utf8_lossy(&hello[..n]);
+        if !hello_s.starts_with("HELLO") {
+            last_err = format!("expected HELLO prefix, got {:?}", &hello[..n]);
             continue;
         }
 
@@ -226,6 +252,10 @@ pub fn vsock_inspect_hash(
         conn.set_read_timeout(Some(Duration::from_secs(30)))?;
         let mut resp = Vec::new();
         loop {
+            if resp.len() > INSPECT_REPLY_MAX {
+                last_err = format!("inspector reply exceeded {INSPECT_REPLY_MAX} bytes");
+                break;
+            }
             let mut buf = [0u8; 128];
             match conn.read(&mut buf) {
                 Ok(0) => break,
@@ -237,7 +267,7 @@ pub fn vsock_inspect_hash(
                     break;
                 }
                 Err(e) => {
-                    last_err = format!("hash read: {e}");
+                    last_err = format!("reply read: {e}");
                     break;
                 }
             }
@@ -245,36 +275,49 @@ pub fn vsock_inspect_hash(
                 break;
             }
         }
+        if resp.len() > INSPECT_REPLY_MAX {
+            continue;
+        }
         let s = String::from_utf8_lossy(&resp);
         let line = s.lines().next().unwrap_or("").trim().to_string();
-        // B3.2c: prefer inspect_verdict JSON; bare hex accepted one revision.
-        let hash = if line.contains("inspect_verdict") {
-            match serde_json::from_str::<serde_json::Value>(&line) {
-                Ok(v)
-                    if v.get("kind").and_then(|x| x.as_str()) == Some("inspect_verdict")
-                        && v.get("outcome").and_then(|x| x.as_str()) == Some("hash_ok") =>
-                {
-                    v.get("content_hash")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .to_string()
-                }
-                Ok(_) => String::new(),
-                Err(_) => String::new(),
-            }
-        } else {
-            line
-        };
-        if hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-            let _ = fs::remove_file(&listen_path);
-            return Ok(hash);
+        if line.is_empty() {
+            last_err = "empty inspector reply line".into();
+            continue;
         }
-        last_err = format!("inspector guest hash reply invalid: {s:?}");
+        // Fail closed: must look like inspect_verdict JSON (strict parse is caller's job).
+        if !line.contains("\"kind\":\"inspect_verdict\"")
+            && !line.contains("\"kind\": \"inspect_verdict\"")
+        {
+            last_err = format!("inspector reply missing inspect_verdict kind: {line:?}");
+            continue;
+        }
+        let _ = fs::remove_file(&listen_path);
+        return Ok(line);
     }
     let _ = fs::remove_file(&listen_path);
     Err(FcError::Request(last_err))
 }
 
+/// Back-compat name — returns content_hash only after caller-side schema parse is preferred.
+/// Prefer [`vsock_inspect_reply`] + `inspector::parse_verdict_line`.
+#[deprecated(note = "use vsock_inspect_reply + parse_verdict_line")]
+pub fn vsock_inspect_hash(
+    vsock_base: &Path,
+    port: u16,
+    body: &[u8],
+    timeout: Duration,
+) -> Result<String, FcError> {
+    vsock_inspect_reply(vsock_base, port, body, timeout, None)
+}
 
-
-
+/// Char-boundary-safe UTF-8 tail for guest-influenced serial buffers (BS-04 crash posture).
+pub fn utf8_tail(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut idx = s.len() - max_bytes;
+    while idx < s.len() && !s.is_char_boundary(idx) {
+        idx += 1;
+    }
+    &s[idx..]
+}
