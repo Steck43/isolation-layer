@@ -1,4 +1,4 @@
-# Session state — 2026-07-21 (B3 slice 1 started)
+# Session state — 2026-07-21 (B3 slice 2a)
 
 Branch: `scaffold` on host `aegis-box` (`~/isolation-layer`).
 
@@ -6,12 +6,12 @@ Branch: `scaffold` on host `aegis-box` (`~/isolation-layer`).
 
 | Task | Status |
 |---|---|
-| **B1** | **CLOSED** — `docs/b1-record.md` |
-| **B2** | **CLOSED** — `docs/b2-record.md` (prove 1301.3 ms jailed-via-helper) |
-| **B3** | **IN PROGRESS** — slice 1 (schema + BS-04 unit suite) in `crates/vestibule`. Live listener = slice 2. |
+| **B1** | **CLOSED** |
+| **B2** | **CLOSED** |
+| **B3** | **IN PROGRESS** — slice 1 schema RECORD; slice 2a UDS listener RECORD; slice 2b Firecracker vsock still next |
 
 ## Resume next
 
-1. B3 slice 2: privilege-dropped vsock listener binary + on-box BS-04 with real guest.
-2. Keep dropbox airlock parked unless Landen reopens synthesis §7 as primary.
+1. Wire `vestibule-listen` to Firecracker vsock UDS from a jailed prove (BS-04 on-box).
+2. Privilege-drop listener (cgroup/seccomp/non-root) before claiming §3.1 complete.
 3. Do not expand sudoers beyond `/usr/local/bin/jailer-launch`.
