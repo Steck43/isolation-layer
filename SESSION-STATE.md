@@ -1,27 +1,25 @@
-# SESSION-STATE — aegis-box
+# SESSION-STATE — isolation-layer (aegis-box)
 
-**Updated:** 2026-07-22 · Cursor eng
-**Tip:** `63e3baa` on `scaffold` — **B3.2h PROT_EXEC filter prove GREEN**
+**Updated:** 2026-07-22
+**Branch:** scaffold
+**Tip:** 0f04071
 
-## RECORD
+## CURRENT
+
+B3.2i listener cgroup jail SHIPPED (code ba06c89). Prove GREEN · `cgroup_jail=true`.
+
+## RECORD table
 
 | Slice | Tip | What |
 | -- | -- | -- |
-| B3.2d | `2d3c3ed` | clear claim + disposition |
-| Q1 A→B | `be475e6` | markers + size_cap Hold/Drop |
-| **B3.2h** | `63e3baa` | mmap/mprotect PROT_EXEC arg filter |
-
-## Prove
-
-- `prove` GREEN · `seccomp_prot_exec_filter=true`
-- prior `prove-q1` still valid on ancestor tip
+| B3.2d | 2d3c3ed | clear + disposition |
+| Q1 A→B | be475e6 | markers + size_cap |
+| B3.2h | 9e777ce | PROT_EXEC arg filter |
+| **B3.2i** | 0f04071 | listener cgroup memory/pids |
 
 ## Next VISION
 
-1. cgroup jail (no sudoers widen)
-2. always-invoked via `handoff_result_message` only
-3. FS manifest / Landlock
-4. richer analyzers
+Landlock · always-invoked · FS manifest · richer analyzers
 
 ## SSH
 
