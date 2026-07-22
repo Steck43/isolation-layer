@@ -144,12 +144,23 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     // B3 slice 2c: guest → vestibule framed ResultMessage on vsock port 53.
     let vsock_base_v = vm.vsock_uds.clone();
+    let reject_path = std::env::temp_dir().join(format!(
+        "vestibule-rejects-{}.jsonl",
+        std::process::id()
+    ));
+    let reject_path_print = reject_path.clone();
     let vestibule_handle = thread::spawn(move || {
-        vestibule::serve_vsock_one(
+        let log = vestibule::RejectLog::open(&reject_path)?;
+        let opts = vestibule::ServeOpts {
+            reject_log: Some(log),
+            harden: true,
+        };
+        vestibule::serve_vsock_one_with_opts(
             &vsock_base_v,
             53,
             vestibule::ParseMode::Enforce,
             Duration::from_secs(45),
+            &opts,
         )
     });
     // Length-prefixed JSON frame via python3 in guest (socat binary pipe).
@@ -174,6 +185,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
         && vestibule_msg.task_id == "prove-b3"
         && vestibule_msg.body == "hello-vestibule";
     println!("vestibule_framed_ok={vestibule_ok}");
+    println!("vestibule_reject_log={}", reject_path_print.display());
     println!(
         "vestibule_msg task_id={} body={}",
         vestibule_msg.task_id, vestibule_msg.body

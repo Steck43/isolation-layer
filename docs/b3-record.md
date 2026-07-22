@@ -8,7 +8,9 @@ Host: aegis-box. Branch: scaffold. Spec: isolation-layer-build-spec-v1.5.md §3.
 |---|---|
 | Slice 1 — schema + frame codec + BS-04 unit suite | **RECORD** (see commit) |
 | Slice 2a — UDS `vestibule-listen` + serve_one | **RECORD** (host-local; not yet Firecracker vsock) |
-| Slice 2b — live Firecracker vsock + on-box BS-04 | **VISION** / next |
+| Slice 2b — Firecracker vsock UDS path | **RECORD** (`675f411`) |
+| Slice 2c — live FC guest framed ResultMessage | **RECORD** (`86e7320`) |
+| Slice 2d — harden + append-only reject log | **RECORD** (this tip) |
 | Dropbox airlock (synthesis §7) | **IN PROGRESS** — inert shelf RECORD (`crates/dropbox`); guard/wire VISION — see `docs/b3-dropbox-record.md` |
 
 ## Slice 1 notes

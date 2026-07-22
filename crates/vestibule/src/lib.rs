@@ -1,12 +1,19 @@
-//! Host-side vestibule: treat every guest byte as hostile until it fits schema.
+//! Host-side vestibule: schema-bounded Firecracker vsock / UDS listener (B3 / BS-04).
 
-mod frame;
-mod listen;
-mod schema;
+pub mod frame;
+pub mod harden;
+pub mod listen;
+pub mod reject;
+pub mod schema;
 
 pub use frame::{decode_frame, encode_frame, FrameError, MAX_FRAME_BYTES};
-pub use listen::{accept_one_result, bind_uds, read_one_frame, serve_one, serve_vsock_one, ListenError};
+pub use harden::{apply_listener_hardening, HardenReport};
+pub use listen::{
+    accept_one_result, bind_uds, read_one_frame, serve_one, serve_one_with_opts, serve_vsock_one,
+    serve_vsock_one_with_opts, ListenError, ServeOpts,
+};
+pub use reject::RejectLog;
 pub use schema::{
     parse_result_message, parse_result_message_raw, ParseMode, ResultMessage, SchemaError,
-    MAX_BODY_BYTES, MAX_FILENAME_LEN, MAX_TASK_ID_LEN, SCHEMA_VERSION,
+    SCHEMA_VERSION,
 };

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -6,7 +6,7 @@ pub const MAX_TASK_ID_LEN: usize = 64;
 pub const MAX_FILENAME_LEN: usize = 128;
 pub const MAX_BODY_BYTES: usize = 32 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResultMessage {
     pub schema_version: u32,

@@ -1,9 +1,11 @@
+use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::fs;
 
 use crate::frame::{decode_frame, FrameError, MAX_FRAME_BYTES};
+use crate::harden::apply_listener_hardening;
+use crate::reject::RejectLog;
 use crate::schema::{parse_result_message_raw, ParseMode, ResultMessage, SchemaError};
 
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +16,15 @@ pub enum ListenError {
     Frame(#[from] FrameError),
     #[error(transparent)]
     Schema(#[from] SchemaError),
+}
+
+/// Options for one-shot serve helpers.
+#[derive(Debug, Default, Clone)]
+pub struct ServeOpts {
+    /// When set, schema/frame rejects are appended here (never truncates).
+    pub reject_log: Option<RejectLog>,
+    /// Apply PR_SET_NO_NEW_PRIVS (+ dumpable clear) after bind, before accept.
+    pub harden: bool,
 }
 
 /// Read one length-prefixed frame from a stream (bounded).
@@ -29,7 +40,6 @@ pub fn read_one_frame(stream: &mut impl Read) -> Result<Vec<u8>, ListenError> {
     }
     let mut payload = vec![0u8; len as usize];
     stream.read_exact(&mut payload)?;
-    // Re-validate via decode_frame for a single code path.
     let mut framed = Vec::with_capacity(4 + payload.len());
     framed.extend_from_slice(&hdr);
     framed.extend_from_slice(&payload);
@@ -37,12 +47,48 @@ pub fn read_one_frame(stream: &mut impl Read) -> Result<Vec<u8>, ListenError> {
     Ok(slice.to_vec())
 }
 
+fn hex_prefix(bytes: &[u8], n: usize) -> String {
+    bytes
+        .iter()
+        .take(n)
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn accept_one_result_logged(
+    stream: &mut UnixStream,
+    mode: ParseMode,
+    reject: Option<&RejectLog>,
+) -> Result<ResultMessage, ListenError> {
+    let payload = match read_one_frame(stream) {
+        Ok(p) => p,
+        Err(e) => {
+            if let Some(log) = reject {
+                let _ = log.append("frame", &format!("{e}"), None);
+            }
+            return Err(e);
+        }
+    };
+    match parse_result_message_raw(&payload, mode) {
+        Ok(msg) => Ok(msg),
+        Err(e) => {
+            if let Some(log) = reject {
+                let _ = log.append(
+                    "schema",
+                    &format!("{e}"),
+                    Some(&hex_prefix(&payload, 32)),
+                );
+            }
+            Err(e.into())
+        }
+    }
+}
+
 pub fn accept_one_result(
     stream: &mut UnixStream,
     mode: ParseMode,
 ) -> Result<ResultMessage, ListenError> {
-    let payload = read_one_frame(stream)?;
-    Ok(parse_result_message_raw(&payload, mode)?)
+    accept_one_result_logged(stream, mode, None)
 }
 
 /// Bind a unix listener; remove stale socket path first.
@@ -58,21 +104,44 @@ pub fn bind_uds(path: &Path) -> Result<UnixListener, ListenError> {
 
 /// Serve exactly one connection then return the parsed message (test/prove helper).
 pub fn serve_one(path: &Path, mode: ParseMode) -> Result<ResultMessage, ListenError> {
+    serve_one_with_opts(path, mode, &ServeOpts::default())
+}
+
+pub fn serve_one_with_opts(
+    path: &Path,
+    mode: ParseMode,
+    opts: &ServeOpts,
+) -> Result<ResultMessage, ListenError> {
     let listener = bind_uds(path)?;
+    if opts.harden {
+        let report = apply_listener_hardening()?;
+        eprintln!(
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={}",
+            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared
+        );
+    }
     let (mut stream, _) = listener.accept()?;
-    let msg = accept_one_result(&mut stream, mode)?;
+    let msg = accept_one_result_logged(&mut stream, mode, opts.reject_log.as_ref())?;
     let _ = stream.write_all(b"ACK\n");
     Ok(msg)
 }
 
 /// Serve one framed ResultMessage over Firecracker vsock UDS.
-/// Host binds `{vsock_base}_{port}` (same convention as `aegis_common::firecracker::vsock_roundtrip`).
-/// Waits until the vsock base socket exists (VM up) or `timeout` elapses.
 pub fn serve_vsock_one(
     vsock_base: &Path,
     port: u16,
     mode: ParseMode,
     timeout: std::time::Duration,
+) -> Result<ResultMessage, ListenError> {
+    serve_vsock_one_with_opts(vsock_base, port, mode, timeout, &ServeOpts::default())
+}
+
+pub fn serve_vsock_one_with_opts(
+    vsock_base: &Path,
+    port: u16,
+    mode: ParseMode,
+    timeout: std::time::Duration,
+    opts: &ServeOpts,
 ) -> Result<ResultMessage, ListenError> {
     let listen_path = PathBuf::from(format!("{}_{port}", vsock_base.display()));
     let deadline = std::time::Instant::now() + timeout;
@@ -90,20 +159,26 @@ pub fn serve_vsock_one(
     }
     let listener = UnixListener::bind(&listen_path)?;
     listener.set_nonblocking(false)?;
+    if opts.harden {
+        let report = apply_listener_hardening()?;
+        eprintln!(
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={}",
+            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared
+        );
+    }
     let (mut stream, _) = listener.accept()?;
-    let msg = accept_one_result(&mut stream, mode)?;
+    let msg = accept_one_result_logged(&mut stream, mode, opts.reject_log.as_ref())?;
     let _ = stream.write_all(b"ACK\n");
     let _ = fs::remove_file(&listen_path);
     Ok(msg)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
     use crate::frame::encode_frame;
     use crate::schema::ParseMode;
+    use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::Duration;
@@ -135,10 +210,15 @@ mod tests {
         let msg = handle.join().unwrap().unwrap();
         assert_eq!(msg.task_id, "t-uds");
 
-        // Second serve: action kind rejected
         let sock2 = dir.join("v2.sock");
+        let reject_path = dir.join("rejects.jsonl");
+        let log = RejectLog::open(&reject_path).unwrap();
         let sock_srv = sock2.clone();
-        let handle = thread::spawn(move || serve_one(&sock_srv, ParseMode::Enforce));
+        let opts = ServeOpts {
+            reject_log: Some(log),
+            harden: true,
+        };
+        let handle = thread::spawn(move || serve_one_with_opts(&sock_srv, ParseMode::Enforce, &opts));
         thread::sleep(Duration::from_millis(50));
         let mut client = UnixStream::connect(&sock2).unwrap();
         let payload = serde_json::json!({
@@ -153,13 +233,15 @@ mod tests {
         client.write_all(&frame).unwrap();
         let err = handle.join().unwrap().unwrap_err();
         assert!(format!("{err}").contains("not allowed") || format!("{err}").contains("kind"));
+        let rejects = fs::read_to_string(&reject_path).unwrap();
+        assert!(rejects.contains("schema"));
+        assert!(rejects.contains("exec") || rejects.contains("not allowed") || rejects.contains("kind"));
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn vsock_path_accepts_framed_result() {
-        use crate::frame::encode_frame;
         let dir = std::env::temp_dir().join(format!("vestibule-vsock-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let base = dir.join("vsock.sock");
