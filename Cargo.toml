@@ -4,6 +4,7 @@ members = [
     "crates/aegis-common",
     "crates/jailer-launch",
     "crates/isolation-manager",
+    "crates/vestibule",
 ]
 
 [workspace.package]
