@@ -11,7 +11,7 @@ Host: aegis-box. Branch: scaffold. Spec: isolation-layer-build-spec-v1.5.md §3.
 | Slice 2b — Firecracker vsock UDS path | **RECORD** (`675f411`) |
 | Slice 2c — live FC guest framed ResultMessage | **RECORD** (`86e7320`) |
 | Slice 2d — harden + append-only reject log | **RECORD** (this tip) |
-| Dropbox airlock (synthesis §7) | **IN PROGRESS** — inert shelf RECORD (`crates/dropbox`); guard/wire VISION — see `docs/b3-dropbox-record.md` |
+| Dropbox airlock (synthesis §7) | **RECORD** B3.1a/1b — HostGuard + Manager handoff — see `docs/b3-dropbox-record.md` |
 
 ## Slice 1 notes
 
@@ -34,3 +34,7 @@ Synthesis §7 / Build-Pack B3 / `IDEA-OA-016` / `IDEA-OA2-212`:
 ## Slice 2e (2026-07-22)
 
 **RECORD:** listener deny-exec seccomp (`execve`/`execveat` → KILL) after no_new_privs; no sudoers / no libseccomp package. See `docs/b3-vsock-slice2e-record.md`.
+
+## Slice 2f (2026-07-22)
+
+**RECORD:** deny-dangerous seccomp + RLIMIT_CORE=0. See `docs/b3-vsock-slice2f-record.md`.

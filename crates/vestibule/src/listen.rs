@@ -116,8 +116,9 @@ pub fn serve_one_with_opts(
     if opts.harden {
         let report = apply_listener_hardening()?;
         eprintln!(
-            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={}",
-            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared, report.seccomp_deny_exec
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} rlimit_core_zero={}",
+            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared,
+            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.rlimit_core_zero
         );
     }
     let (mut stream, _) = listener.accept()?;
@@ -162,8 +163,9 @@ pub fn serve_vsock_one_with_opts(
     if opts.harden {
         let report = apply_listener_hardening()?;
         eprintln!(
-            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={}",
-            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared, report.seccomp_deny_exec
+            "vestibule_harden euid={} egid={} no_new_privs={} dumpable_cleared={} seccomp_deny_exec={} seccomp_deny_dangerous={} rlimit_core_zero={}",
+            report.euid, report.egid, report.no_new_privs, report.dumpable_cleared,
+            report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.rlimit_core_zero
         );
     }
     let (mut stream, _) = listener.accept()?;
