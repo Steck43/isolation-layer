@@ -37,7 +37,15 @@ class LaunchContext:
 
 
 def curl_api(sock: Path, method: str, path: str, body: dict | None = None) -> str:
-    cmd = ["curl", "-fsS", "--unix-socket", str(sock), "-X", method, f"http://localhost{path}"]
+    cmd = [
+        "curl",
+        "-fsS",
+        "--unix-socket",
+        str(sock),
+        "-X",
+        method,
+        f"http://localhost{path}",
+    ]
     if body is not None:
         cmd += ["-H", "Content-Type: application/json", "-d", json.dumps(body)]
     return subprocess.check_output(cmd, text=True)
@@ -60,7 +68,9 @@ def drain_for(out_q: queue.Queue[str], seconds: float) -> str:
     return "".join(chunks)
 
 
-def wait_for_patterns(out_q: queue.Queue[str], patterns: list[str], timeout: float) -> tuple[float, str]:
+def wait_for_patterns(
+    out_q: queue.Queue[str], patterns: list[str], timeout: float
+) -> tuple[float, str]:
     start = time.monotonic()
     buf = ""
     while time.monotonic() - start < timeout:
@@ -71,7 +81,9 @@ def wait_for_patterns(out_q: queue.Queue[str], patterns: list[str], timeout: flo
         for pat in patterns:
             if pat in buf:
                 return time.monotonic() - start, buf
-    raise TimeoutError(f"patterns {patterns!r} not seen in {timeout}s; tail={buf[-800:]!r}")
+    raise TimeoutError(
+        f"patterns {patterns!r} not seen in {timeout}s; tail={buf[-800:]!r}"
+    )
 
 
 def vsock_roundtrip(uds_path: Path, port: int = 52, timeout: float = 60) -> dict:
@@ -246,13 +258,17 @@ def launch_jailed(run_dir: Path) -> LaunchContext:
     while not api_sock.exists() and time.time() < deadline:
         if proc.poll() is not None:
             output = proc.stdout.read() if proc.stdout else ""
-            raise RuntimeError(f"jailer exited early (code={proc.returncode}):\n{output}")
+            raise RuntimeError(
+                f"jailer exited early (code={proc.returncode}):\n{output}"
+            )
         time.sleep(0.1)
     if not api_sock.exists():
         proc.terminate()
         raise RuntimeError("jailer did not create api.sock within 10s")
 
-    return LaunchContext("jailed", run_dir, api_sock, vsock_uds, log_path, proc, jail_id, jail_root)
+    return LaunchContext(
+        "jailed", run_dir, api_sock, vsock_uds, log_path, proc, jail_id, jail_root
+    )
 
 
 def teardown(ctx: LaunchContext) -> None:

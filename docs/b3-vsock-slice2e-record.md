@@ -1,11 +1,11 @@
-# B3 slice 2e record — listener deny-exec seccomp
+# B3 slice 2e record - listener deny-exec seccomp
 
 **Date:** 2026-07-22  
 **Branch:** `scaffold`
 
 ## Thesis
 
-After `PR_SET_NO_NEW_PRIVS`, the one-shot vestibule listener installs a seccomp filter that **KILL**s `execve` / `execveat`. Compromise of the listener cannot spawn a shell. No sudoers, no libseccomp package — pure BPF via `prctl`.
+After `PR_SET_NO_NEW_PRIVS`, the one-shot vestibule listener installs a seccomp filter that **KILL**s `execve` / `execveat`. Compromise of the listener cannot spawn a shell. No sudoers, no libseccomp package - pure BPF via `prctl`.
 
 ## What landed
 

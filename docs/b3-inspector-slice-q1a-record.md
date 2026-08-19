@@ -1,4 +1,4 @@
-# B3 / Stage-Q1 A→B — inspect analyzer stub record
+# B3 / Stage-Q1 A→B - inspect analyzer stub record
 
 **Tip:** `c4601d1` on `scaffold`
 **Date:** 2026-07-22  
@@ -28,7 +28,7 @@ Also: full `prove` still GREEN (`inspector_verdict_ok` clear/advance).
 ## Research posture
 
 Cite+pattern-adopt CaMeL [2503.18813] / AuthGraph [2605.26497] (CQ-039=A / IDEA-CUR-249).  
-Markers are harness tokens — **not** threat detection.  
+Markers are harness tokens - **not** threat detection.  
 This tip is **not** “Stage Q1 review/threat-hunt closed.”
 
 ## Non-claims

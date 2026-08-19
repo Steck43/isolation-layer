@@ -1,4 +1,7 @@
-import struct, sys, hashlib, json
+import struct
+import sys
+import hashlib
+import json
 
 sys.stdout.buffer.write(b"HELLO\n")
 sys.stdout.buffer.flush()

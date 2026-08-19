@@ -1,11 +1,11 @@
-# Cursor Directive — Isolation Box, Task B3 (slice 1)
+# Cursor Directive - Isolation Box, Task B3 (slice 1)
 
 **Where this sits.** `aegis-box`, `~/isolation-layer`, branch `scaffold`. B1 and B2 are CLOSED. Governing: `docs/isolation-layer-build-spec-v1.5.md` §3.1 + BS-04; `Isolation-Architecture-Synthesis` §6; Linear AEG-22.
 
 ## Path lock (recommend one)
 
 **Build the hardened vsock vestibule listener** (schema-bounded, result-only).  
-Content-addressed dropbox (synthesis §7) is **stronger for async handoff** — Landen still wants this thought kept (`IDEA-CUR-147`). It is **not** the B3 Linear/spec primary deliverable; keep as **intentional HORIZON** B3.1 / B4 airlock. Park ≠ abandon. Do not fork B3 build into both at once.
+Content-addressed dropbox (synthesis §7) is **stronger for async handoff** - Landen still wants this thought kept (`IDEA-CUR-147`). It is **not** the B3 Linear/spec primary deliverable; keep as **intentional HORIZON** B3.1 / B4 airlock. Park ≠ abandon. Do not fork B3 build into both at once.
 
 ## Slice 1 acceptance (this commit)
 

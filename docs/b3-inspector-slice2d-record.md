@@ -1,4 +1,4 @@
-# B3.2d — inspect_verdict multi-outcome (claim / disposition)
+# B3.2d - inspect_verdict multi-outcome (claim / disposition)
 
 ## What shipped
 - Guest claim schema: `schema_version:1`, `outcome` ∈ {clear,suspect,failed}, `reasons` closed enum
@@ -12,7 +12,7 @@
 - `isolation-manager prove` → `inspector_claim_outcome=clear` · `inspector_disposition=advance` · `host_vmm_hygiene=PASS`
 
 ## Research posture
-CQ-039 Option A / IDEA-CUR-249 — claims ≠ decisions (CaMeL/AuthGraph pattern-adopt)
+CQ-039 Option A / IDEA-CUR-249 - claims ≠ decisions (CaMeL/AuthGraph pattern-adopt)
 
 ## Explicitly not in 2d
 - Real Stage-Q1 analyzers · always-invoked · cgroup · mprotect · guest max_qualification
