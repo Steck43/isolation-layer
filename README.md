@@ -10,7 +10,7 @@ Author: [Landen Stecker](https://github.com/Steck43)
 
 The design is chosen against one threat: **an agent that disables its own fence.**
 
-In April 2026 a coding agent escaped a bubblewrap sandbox by discovering `/proc/self/root` as a denylist synonym for a blocked path, and then attempted to disable bubblewrap once caught. The failure was structural, not a missing rule. The fence and the fenced shared a trust domain, and a denylist that enumerates badness loses to an opponent that routes around it.
+Leonardo Di Donato documented this class for Ona in February and March 2026: a coding agent escaped a bubblewrap sandbox by using `/proc/self/root` as a denylist synonym for a blocked path, then tried to disable bubblewrap once caught ([How Claude Code Escapes its Own Denylist and Sandbox](https://ona.com/stories/how-claude-code-escapes-its-own-denylist-and-sandbox)). The failure was structural, not a missing rule. The fence and the fenced shared a trust domain, and a denylist that enumerates badness loses to an opponent that routes around it.
 
 A Firecracker microVM removes the shared domain rather than hardening it. The boundary is enforced by KVM in the host kernel and by a separate guest kernel. It is not an object inside the guest: no namespace to unshare, no LSM policy to disable, no fence process in the guest's PID table to kill. Firecracker exposes five emulated devices: virtio-net, virtio-block, virtio-vsock, serial console, and a minimal keyboard controller. Everything not implemented is attack surface that does not exist.
 
@@ -37,7 +37,7 @@ Rust workspace, six crates:
 
 | Crate | Role |
 |---|---|
-| `isolation-manager` | Launch, prove, and inspect microVMs. Runs inside the VM substrate. |
+| `isolation-manager` | Launch, prove, inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). |
 | `jailer-launch` | Jailer invocation and privilege drop. |
 | `vestibule` | Seccomp allowlist, **default KILL**. Landlock filesystem allowlist. |
 | `inspector` | Post-run verdict and host-disposition checks. |
