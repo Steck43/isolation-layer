@@ -16,3 +16,8 @@ squashfs-root/
 
 # Rust build output
 /target/
+
+# Python local caches
+__pycache__/
+.pytest_cache/
+.ruff_cache/
