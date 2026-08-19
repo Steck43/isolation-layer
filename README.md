@@ -37,7 +37,7 @@ Rust workspace, six crates:
 
 | Crate | Role |
 |---|---|
-| `isolation-manager` | Launch, prove, and inspect microVMs. Runs inside the VM substrate. |
+| `isolation-manager` | Launch, prove, inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). |
 | `jailer-launch` | Jailer invocation and privilege drop. |
 | `vestibule` | Seccomp allowlist, **default KILL**. Landlock filesystem allowlist. |
 | `inspector` | Post-run verdict and host-disposition checks. |

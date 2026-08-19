@@ -3,6 +3,7 @@ mod inspect_vm;
 mod launch;
 mod prove;
 mod prove_q1;
+mod read;
 
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -30,6 +31,8 @@ pub enum Commands {
     InspectStage(InspectStageArgs),
     /// Disposable FC inspector VM: stage then claim+disposition over vsock, teardown.
     InspectVm(InspectVmArgs),
+    /// Allowlisted host-path read (observe); receipt + box-computed sha256.
+    Read(ReadArgsCli),
 }
 
 #[derive(Debug, Parser)]
@@ -84,6 +87,19 @@ pub struct InspectVmArgs {
     pub expect: Option<String>,
 }
 
+#[derive(Debug, Parser)]
+pub struct ReadArgsCli {
+    /// Absolute path to read (request-allowlist literal).
+    #[arg(long)]
+    pub path: PathBuf,
+    /// Max bytes to read (default 65536; hard cap 1 MiB).
+    #[arg(long)]
+    pub max_bytes: Option<u64>,
+    /// Write receipt JSON to this path (default: stderr).
+    #[arg(long)]
+    pub receipt: Option<PathBuf>,
+}
+
 fn main() {
     let cli = Cli::parse();
     let code = match cli.command {
@@ -92,6 +108,11 @@ fn main() {
         Commands::Handoff(args) => run_handoff(args),
         Commands::InspectStage(args) => run_inspect_stage(args),
         Commands::InspectVm(args) => run_inspect_vm(args),
+        Commands::Read(args) => read::run(read::ReadArgs {
+            path: args.path,
+            max_bytes: args.max_bytes,
+            receipt: args.receipt,
+        }),
     };
     process::exit(code);
 }
