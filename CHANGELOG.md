@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- 
+- README plane order: the box sits between floor and judge; the allowlist is only the floor beneath the atom plane; a contradiction the rollup cannot settle is the handoff. Ordering is design intent; `always_invoked_claim` stays false. 
 
 ### Fixed
 
