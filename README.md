@@ -2,34 +2,11 @@
 
 An execution-isolation box for runtime agents. Each live, full-capability execution runs as an **ephemeral Firecracker microVM, one per task, launched under the jailer, destroyed on completion.**
 
-The floor decides. The judge doubts. The box contains. The audit attests. This tree is
-the box.
+The floor decides, the judge doubts, the box contains, and the audit attests. This tree is the box: it sits between floor and judge, and it is what runs when the floor cannot settle the call, not everything the floor permits.
 
-The box is not everything the floor permits. It is what runs when the floor cannot settle
-the call, and it sits **between** floor and judge rather than after both.
+A tool call meets capability-gate first. A contradiction the atom-plane rollup cannot settle is the handoff to this tree: run it somewhere disposable, kill it if it is malicious. The three-object model that produces that contradiction lives on [aegis-atoms](https://github.com/Steck43/aegis-atoms). The box absorbs it before a judge call is paid for; only what still contradicts reaches the judge, which may concur, flag, tighten or escalate, and may never widen or approve. Whatever none of them settles binds to a human.
 
-A tool call meets capability-gate, a deterministic allowlist. That allowlist is only the
-floor beneath the atom plane. Atoms then fire facts about the call. An atom is
-polarity-free and cannot authorize: its decision is DENY or ABSTAIN, never yes. Polarity
-and strength live on the edge; the effect lives on the control. The rollup combines them
-deny-overrides, tracking maximum support and maximum contradiction independently rather
-than summing, so an allow that outranks a block cannot be expressed and argument order
-cannot change the result.
-
-A clean rollup ends there. Contradiction alone gives the control its own effect; support
-alone gives allow. **A contradiction the rollup cannot settle is the handoff to this
-tree**: run it somewhere disposable, kill it if it is malicious. The box absorbs
-contradictions before a judge call is paid for. Only what still contradicts reaches the
-judge, which may concur, flag, tighten or escalate, and may never widen or approve.
-Whatever none of them settles binds to a human.
-
-Every atom replaces a broad denial with a surgical one, so more good atoms mean *more*
-agent freedom, not less. Containment is the cost of that trade, not the goal.
-
-**This ordering is design intent, not a forced path.** Today a tool call meets the
-allowlist and runs. It does not have to enter the atom plane, does not have to enter this
-box, and does not pay a judge. `always_invoked_claim` stays false until a named prove says
-otherwise.
+Containment is the cost of surgical denial, not the goal. This ordering is design intent, not a forced path: today a tool call meets the allowlist and runs, and `always_invoked_claim` stays false until a named prove says otherwise.
 
 Author: [Landen Stecker](https://github.com/Steck43)
 
