@@ -19,4 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- First push of a new branch resolves craft BASE to the origin default, so required craft jobs do not fail on an all-zero `github.event.before`.
 - Cite the Ona / Di Donato primary for the bubblewrap `/proc/self/root` escape (February to March 2026, not April) and link the story.
