@@ -202,14 +202,65 @@ def scan_emdash(label: str, text: str) -> list[str]:
     return hits
 
 
+def _blank(line: str) -> str:
+    """Same length, same newlines, no words. Offsets must survive masking so a
+    hit still reports the real line number and the real snippet."""
+    return re.sub(r"[^\n]", " ", line)
+
+
+def mask_non_prose(text: str) -> str:
+    """Blank the spans that quote rather than assert.
+
+    Found 2026-08-19: the pack's own `SENIOR-CRAFT-FLOOR.md` fails this linter.
+    Its negative-control section tells you to plant "Additionally, this pivotal
+    landscape" in a README to prove `craft (voice)` goes red, and the linter
+    read the instruction as the offence. A rule that cannot survive being
+    documented gets the documentation weakened instead of the rule.
+
+    scan_emdash already skipped frontmatter and fenced blocks. The RULES loop
+    did not, so the two halves of one linter disagreed about what counted as
+    prose. This is that skip, shared, plus inline code spans.
+
+    Note the deliberate hole: slop inside backticks is not flagged. A code span
+    is an explicit quotation, which is exactly the distinction being drawn, and
+    fenced blocks were already exempt on the same reasoning.
+    """
+    out: list[str] = []
+    in_fence = False
+    in_frontmatter = False
+    for i, line in enumerate(text.splitlines(keepends=True), 1):
+        stripped = line.strip()
+        if i == 1 and stripped == "---":
+            in_frontmatter = True
+            out.append(_blank(line))
+            continue
+        if in_frontmatter:
+            if stripped in ("---", "..."):
+                in_frontmatter = False
+            out.append(_blank(line))
+            continue
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            out.append(_blank(line))
+            continue
+        if in_fence:
+            out.append(_blank(line))
+            continue
+        out.append(re.sub(r"`[^`\n]*`", lambda m: " " * len(m.group(0)), line))
+    return "".join(out)
+
+
 def scan_text(label: str, text: str, *, fail_on_warn: bool) -> list[str]:
     hits: list[str] = []
+    # Match against masked text so quotations do not read as assertions, but
+    # report from the original: masking preserves every offset.
+    masked = mask_non_prose(text)
     for rid, sev, pat, what, fix in RULES:
         if sev == "WARN" and not fail_on_warn:
             continue
-        for m in pat.finditer(text):
+        for m in pat.finditer(masked):
             line_no = text[: m.start()].count("\n") + 1
-            snippet = m.group(0).replace("\n", " ")[:80]
+            snippet = text[m.start() : m.end()].replace("\n", " ")[:80]
             hits.append(
                 f"{label}:{line_no}: {sev} {rid}: {what}. saw {snippet!r}. Fix: {fix}"
             )
@@ -265,6 +316,33 @@ def selftest() -> int:
                 print(f"    {h}")
 
     expect("nc-vocab", "Additionally, this pivotal landscape is crucial.", True)
+    # Mention, not use. Every one of these carries the same banned words as the
+    # line above, which must stay red.
+    expect(
+        "ok-vocab-in-fence",
+        "Plant this:\n\n```\nAdditionally, this pivotal landscape is crucial.\n```\n",
+        False,
+    )
+    expect(
+        "ok-vocab-in-code-span",
+        "Plant `Additionally, this pivotal landscape` in a README to prove it goes red.",
+        False,
+    )
+    expect(
+        "ok-vocab-in-frontmatter",
+        "---\ntitle: Additionally the pivotal landscape\n---\n\nClean prose here.\n",
+        False,
+    )
+    expect(
+        "nc-vocab-after-a-fence-closes",
+        "```\ncode\n```\n\nAdditionally, this pivotal landscape is crucial.\n",
+        True,
+    )
+    expect(
+        "nc-vocab-outside-backticks",
+        "Run `make check`. Additionally, this pivotal landscape is crucial.",
+        True,
+    )
     expect("nc-chat", "I hope this helps! Let me know if you need anything.", True)
     expect("nc-emdash", "Ship the floor — then unlock egress.", True)
     # Grammatical breaks: still blocked.
