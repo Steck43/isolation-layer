@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+title: isolation-layer
+message: If you use this software, please cite it as below.
+type: software
+authors:
+  - family-names: Stecker
+    given-names: Landen
+license: MIT
+repository-code: https://github.com/Steck43/isolation-layer
+abstract: >
+  Execution-isolation box for runtime agents. The box sits between the
+  floor and the judge. Default branch is scaffold. Design intent is not
+  a forced invoke path. always_invoked stays false until a named prove.
+keywords:
+  - isolation
+  - firecracker
+  - agent security
+  - containment
