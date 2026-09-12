@@ -1,0 +1,17 @@
+{
+  "title": "isolation-layer",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Stecker, Landen"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "isolation",
+    "firecracker",
+    "agent security",
+    "containment"
+  ],
+  "description": "Execution-isolation box for runtime agents. The box sits between the floor and the judge. Default branch is scaffold."
+}
