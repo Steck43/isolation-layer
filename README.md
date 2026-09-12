@@ -75,4 +75,4 @@ Published docs do not stamp tip SHAs. Those hashes were local-session locators a
 
 ## License
 
-See `LICENSE`.
+`LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `Apache-2.0`. That split is named, not silently flipped.
