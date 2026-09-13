@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def list_vmm(proc_text: str) -> list[str]:
     hits = []
     for ln in proc_text.splitlines():
-        if "grep" in ln:
+        if "grep" in ln or "kill_residue" in ln:
             continue
         if "firecracker" in ln or "jailer" in ln:
             hits.append(ln)
