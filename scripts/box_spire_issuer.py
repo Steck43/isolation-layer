@@ -24,9 +24,7 @@ from pathlib import Path
 REQUIRED_HOST = "aegisbox"
 VERSION = "1.15.3"
 TARBALL = f"spire-{VERSION}-linux-amd64-musl.tar.gz"
-TARBALL_SHA256 = (
-    "ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
-)
+TARBALL_SHA256 = "ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
 BASE = f"https://github.com/spiffe/spire/releases/download/v{VERSION}"
 TRUST_DOMAIN = "aegisbox.mshome.net"
 
@@ -64,21 +62,21 @@ def write_server_conf(root: Path) -> Path:
     data.mkdir(parents=True, exist_ok=True)
     conf = root / "server.conf"
     body = (
-        f'server {{\n'
+        f"server {{\n"
         f'  bind_address = "127.0.0.1"\n'
         f'  bind_port = "18081"\n'
         f'  trust_domain = "{TRUST_DOMAIN}"\n'
         f'  data_dir = "{data.as_posix()}"\n'
         f'  log_level = "INFO"\n'
-        f'}}\n'
-        f'plugins {{\n'
+        f"}}\n"
+        f"plugins {{\n"
         f'  DataStore "sql" {{\n'
-        f'    plugin_data {{\n'
+        f"    plugin_data {{\n"
         f'      database_type = "sqlite3"\n'
         f'      connection_string = "{(data / "datastore.sqlite3").as_posix()}"\n'
-        f'    }}\n'
-        f'  }}\n'
-        f'}}\n'
+        f"    }}\n"
+        f"  }}\n"
+        f"}}\n"
     )
     conf.write_text(body, encoding="utf-8")
     return conf
