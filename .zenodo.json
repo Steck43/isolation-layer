@@ -13,5 +13,5 @@
     "agent security",
     "containment"
   ],
-  "description": "Execution-isolation box for runtime agents. The box sits between the floor and the judge. Default branch is scaffold."
+  "description": "Execution-isolation box for runtime agents. The box sits between the floor and the judge. Default branch is main."
 }
