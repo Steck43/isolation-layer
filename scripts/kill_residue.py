@@ -4,6 +4,7 @@
 Anderson row 2. Run after scripts/b1-prove.py. This is the residue check,
 not the boot itself.
 """
+
 from __future__ import annotations
 
 import argparse

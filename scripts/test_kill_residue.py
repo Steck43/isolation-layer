@@ -1,4 +1,5 @@
 """kill_residue: leftover VMM fails; clean list passes."""
+
 from __future__ import annotations
 
 from kill_residue import list_vmm
@@ -6,7 +7,10 @@ from kill_residue import list_vmm
 
 def main() -> int:
     if list_vmm("user 1 firecracker --api-sock x\nuser 2 grep firecracker\n"):
-        if len(list_vmm("user 1 firecracker --api-sock x\nuser 2 grep firecracker\n")) != 1:
+        if (
+            len(list_vmm("user 1 firecracker --api-sock x\nuser 2 grep firecracker\n"))
+            != 1
+        ):
             print("FAIL grep filtered wrong")
             return 1
     else:

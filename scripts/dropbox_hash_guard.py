@@ -3,6 +3,7 @@
 
 BS-04 shape: reject a guest-supplied path; hash body bytes the host already holds.
 """
+
 from __future__ import annotations
 
 import hashlib
