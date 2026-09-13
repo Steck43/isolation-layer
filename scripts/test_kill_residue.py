@@ -19,6 +19,13 @@ def main() -> int:
     if list_vmm("user 1 bash\n"):
         print("FAIL clean list")
         return 1
+    dest = (
+        "landen 1 bash -c AEGISBOX_PROVE=1 python3 /tmp/kill_residue.py; "
+        "command -v firecracker; command -v jailer\n"
+    )
+    if list_vmm(dest):
+        print("FAIL dest-read self-match")
+        return 1
     print("PASS test_kill_residue")
     return 0
 
