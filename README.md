@@ -2,7 +2,7 @@
 
 An execution-isolation box for runtime agents. Each live, full-capability execution runs as an **ephemeral Firecracker microVM, one per task, launched under the jailer, destroyed on completion.**
 
-The floor decides, the judge doubts, the box contains, and the audit attests. This tree is the box: it sits between floor and judge, and it is what runs when the floor cannot settle the call, not everything the floor permits.
+Four planes plus an identity horizon. The floor decides, the judge doubts, the box contains, and the audit attests. This tree is the box: it sits between floor and judge, and it is what runs when the floor cannot settle the call, not everything the floor permits.
 
 A tool call meets capability-gate first. A contradiction the atom-plane rollup cannot settle is the handoff to this tree: run it somewhere disposable, kill it if it is malicious. The three-object model that produces that contradiction lives on [aegis-atoms](https://github.com/Steck43/aegis-atoms). The box absorbs it before a judge call is paid for; only what still contradicts reaches the judge, which may concur, flag, tighten or escalate, and may never widen or approve. Whatever none of them settles binds to a human.
 
@@ -69,9 +69,9 @@ The probe suite is **fail-first**: every probe has a named negative control, and
 
 ## Status
 
-Active research build. Interfaces are not stable. This is a working isolation layer for one to two local agents, not a multi-tenant control plane, and it deliberately does not inherit the cloud control planes of the projects whose lifecycle and vsock patterns it studied.
+Active research build. Interfaces are not stable. This is a working isolation layer for one to two local agents, not a multi-tenant control plane, and it deliberately does not inherit the cloud orchestration of the projects whose lifecycle and vsock patterns it studied.
 
-Published docs do not stamp tip SHAs. Those hashes were local-session locators and go stale after a history rewrite.
+Default-branch docs do not stamp tip SHAs. Those hashes were local-session locators and go stale after a history rewrite.
 
 ## License
 
