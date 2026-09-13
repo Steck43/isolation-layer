@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scripts/kill_residue.py` fails if a Firecracker guest or VMM is still up after teardown. Anderson row 2. Not a boot.
+- `scripts/dropbox_hash_guard.py` hashes host-held body bytes and rejects path escape. Time Chamber is not the door. `always_invoked` stays false.
 - `cargo test --workspace` in floor CI. README names the MIT LICENSE versus Cargo Apache-2.0 split.
 - LOOP-006 four named rows (`tests/test_loop006_named.py`). Each skips without `AEGISBOX_PROVE`. Boot/kill is not this suite.
 - CITATION.cff and `.zenodo.json` so a later tag can mint. No DOI on this record yet.
