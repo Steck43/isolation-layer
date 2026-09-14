@@ -8,6 +8,23 @@ A tool call meets capability-gate first. A contradiction the atom-plane rollup c
 
 Containment is the cost of surgical denial, not the goal. This ordering is design intent, not a forced path: today a tool call meets the allowlist and runs, and `always_invoked_claim` stays false until a named prove says otherwise.
 
+## Four-plane path
+
+This roof is the box. The mermaid is the same Figure 1 candidate as the paper and the profile. Design intent, not a forced invoke. `always_invoked` stays false.
+
+```mermaid
+flowchart TD
+  CALL([Proposed tool call]) --> FLOOR[Floor · allowlist + atoms]
+  FLOOR -->|clean verdict| ENFORCE[Enforce]
+  FLOOR -->|contradiction the rollup cannot settle| BOX[Box · isolation-layer]
+  BOX -->|still contradicts| JUDGE[Bounded judge · subtract-only]
+  JUDGE -->|concur / flag / tighten / escalate| ENFORCE
+  JUDGE -.->|cannot widen or approve| ENFORCE
+  BOX -->|absorbed| ENFORCE
+  ENFORCE --> OUT([allow · deny · human])
+  JUDGE -->|low confidence / retry cap| HUMAN([Human])
+```
+
 Author: [Landen Stecker](https://github.com/Steck43)
 
 ## Why a microVM and not a sandbox
