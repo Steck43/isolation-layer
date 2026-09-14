@@ -14,15 +14,16 @@ This roof is the box. The mermaid is the same Figure 1 candidate as the paper an
 
 ```mermaid
 flowchart TD
-  CALL([Proposed tool call]) --> FLOOR[Floor · allowlist + atoms]
-  FLOOR -->|clean verdict| ENFORCE[Enforce]
-  FLOOR -->|contradiction the rollup cannot settle| BOX[Box · isolation-layer]
-  BOX -->|still contradicts| JUDGE[Bounded judge · subtract-only]
-  JUDGE -->|concur / flag / tighten / escalate| ENFORCE
-  JUDGE -.->|cannot widen or approve| ENFORCE
-  BOX -->|absorbed| ENFORCE
-  ENFORCE --> OUT([allow · deny · human])
-  JUDGE -->|low confidence / retry cap| HUMAN([Human])
+  CALL["Proposed tool call<br/>identity is the argument, not a fifth plane"] --> FLOOR["Floor: allowlist + atoms"]
+  FLOOR -->|"clean"| ENFORCE["Enforce on author Hermes profile"]
+  FLOOR -->|"rollup cannot settle"| BOX["Box: isolation-layer"]
+  BOX -->|"still contradicts"| JUDGE["Judge: subtract only"]
+  BOX -->|"absorbed"| ENFORCE
+  JUDGE -->|"concur / flag / tighten"| ENFORCE
+  JUDGE -.->|"cannot widen or approve"| ENFORCE
+  JUDGE -->|"low confidence"| HUMAN["Human"]
+  ENFORCE --> OUT["allow / deny / human"]
+  ENFORCE --> AUDIT["Audit: hash-chained, append-only"]
 ```
 
 Author: [Landen Stecker](https://github.com/Steck43)
