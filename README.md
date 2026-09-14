@@ -2,7 +2,7 @@
 
 An execution-isolation box for runtime agents. Each live, full-capability execution runs as an **ephemeral Firecracker microVM, one per task, launched under the jailer, destroyed on completion.**
 
-Four planes plus an identity horizon. The floor decides, the judge doubts, the box contains, and the audit attests. This tree is the box: it sits between floor and judge, and it is what runs when the floor cannot settle the call, not everything the floor permits.
+The four planes take identity as an argument. The floor decides. The box sits between floor and judge. The judge subtracts. The audit attests. This tree is the box: it runs when the floor cannot settle the call, not everything the floor permits.
 
 A tool call meets capability-gate first. A contradiction the atom-plane rollup cannot settle is the handoff to this tree: run it somewhere disposable, kill it if it is malicious. The three-object model that produces that contradiction lives on [aegis-atoms](https://github.com/Steck43/aegis-atoms). The box absorbs it before a judge call is paid for; only what still contradicts reaches the judge, which may concur, flag, tighten or escalate, and may never widen or approve. Whatever none of them settles binds to a human.
 
@@ -10,7 +10,7 @@ Containment is the cost of surgical denial, not the goal. This ordering is desig
 
 ## Four-plane path
 
-This roof is the box. The mermaid is the same Figure 1 candidate as the paper and the profile. Design intent, not a forced invoke. `always_invoked` stays false.
+This roof is the box. The figure's source of truth is the SVG. Mermaid here is the sketch. GitHub mermaid still concatenates labels. `always_invoked` stays false.
 
 ```mermaid
 flowchart TD
@@ -25,6 +25,8 @@ flowchart TD
   ENFORCE --> OUT["allow / deny / human"]
   ENFORCE --> AUDIT["Audit: hash-chained, append-only"]
 ```
+
+![Figure 1. Box between floor and judge](assets/fig1-box-between.svg)
 
 Author: [Landen Stecker](https://github.com/Steck43)
 
