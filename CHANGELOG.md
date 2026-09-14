@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README carries the Figure 1 mermaid candidate already on the paper and the profile. This roof stays the box.
 - README names four planes plus identity horizon and drops venue-wording on default-branch docs.
 
 ### Added
