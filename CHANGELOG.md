@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Default-branch tip no longer carries the dated seat directive or `SESSION-STATE.md`. `.mailmap` keeps noreply folding and no longer names a tailnet host. Host-refuse prove strings stay.
+
 ### Changed
 
 - README names four planes plus identity horizon and drops venue-wording on default-branch docs.
