@@ -282,4 +282,21 @@ mod tests {
         assert!(assert_cgroup_version("1").is_err());
         assert!(assert_cgroup_version("2").is_ok());
     }
+
+    #[test]
+    fn vm_config_has_no_network_interface() {
+        let req = LaunchRequest {
+            jail_id: "mgr-valid0001".into(),
+            kernel_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176"),
+            rootfs_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4",
+            ),
+            uid: 1000,
+            gid: 1000,
+        };
+        let cfg = req.vm_config_json();
+        assert!(!cfg.contains("network"));
+        assert!(!cfg.contains("tap"));
+        assert!(cfg.contains("vsock"));
+    }
 }

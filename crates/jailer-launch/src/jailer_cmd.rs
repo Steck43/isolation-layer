@@ -25,3 +25,27 @@ pub fn jailer_argv(req: &LaunchRequest) -> Vec<String> {
         "firecracker.log".into(),
     ]
 }
+
+/// SSH argv for a hop onto the box. The remote command is jailer-launch
+/// with the same fixed flags. The guest config is what the launch already writes.
+pub fn ssh_hop_argv(host: &str, req: &LaunchRequest) -> Vec<String> {
+    vec![
+        "ssh".into(),
+        "-o".into(),
+        "BatchMode=yes".into(),
+        "-o".into(),
+        "ConnectTimeout=5".into(),
+        host.into(),
+        "jailer-launch".into(),
+        "--jail-id".into(),
+        req.jail_id.clone(),
+        "--kernel".into(),
+        req.kernel_path.display().to_string(),
+        "--rootfs".into(),
+        req.rootfs_path.display().to_string(),
+        "--uid".into(),
+        req.uid.to_string(),
+        "--gid".into(),
+        req.gid.to_string(),
+    ]
+}

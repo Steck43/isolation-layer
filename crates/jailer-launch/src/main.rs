@@ -199,4 +199,26 @@ mod tests {
         assert!(!joined.contains("/bin/sh"));
         assert!(!joined.contains("--netns"));
     }
+
+    #[test]
+    fn ssh_hop_argv_adds_no_network_and_does_not_claim_always_invoked() {
+        let req = LaunchRequest {
+            jail_id: "mgr-hop000001".into(),
+            kernel_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176"),
+            rootfs_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4",
+            ),
+            uid: 1000,
+            gid: 1000,
+        };
+        let argv = jailer_cmd::ssh_hop_argv("landen@aegisbox.mshome.net", &req);
+        let joined = argv.join(" ");
+        assert!(joined.starts_with("ssh -o BatchMode=yes"));
+        assert!(joined.contains("landen@aegisbox.mshome.net"));
+        assert!(joined.contains("jailer-launch --jail-id mgr-hop000001"));
+        assert!(!joined.contains("network"));
+        assert!(!joined.contains("--netns"));
+        assert!(!joined.contains("always_invoked"));
+        assert!(!req.vm_config_json().contains("network"));
+    }
 }
