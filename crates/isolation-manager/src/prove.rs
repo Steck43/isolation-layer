@@ -2,12 +2,31 @@ use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use aegis_common::{assert_host_vmm_hygiene, HostSnapshot};
+use aegis_common::{
+    assert_host_vmm_hygiene, default_chain_path, ChainVerdict, DecisionChain, HostSnapshot,
+};
 use serde_json::json;
 
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
+/// Append a host chain row. Fail closed: caller must abort prove on `Err`.
+fn chain_append(
+    chain: &DecisionChain,
+    jail_id: &str,
+    verdict: ChainVerdict,
+    reason: &str,
+    session_id: Option<&str>,
+    tool_call_id: Option<&str>,
+) -> Result<(), i32> {
+    match chain.append(jail_id, verdict, reason, session_id, tool_call_id) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("decision_chain_append_fail: {e}");
+            Err(1)
+        }
+    }
+}
 
 fn preflight_honesty_helper() -> Result<(), String> {
     use std::process::Command;
@@ -26,64 +45,183 @@ fn preflight_honesty_helper() -> Result<(), String> {
 }
 
 pub fn run(args: ProveArgs) -> i32 {
+    let chain = DecisionChain::open(default_chain_path());
+    let session_id = args.session_id.as_deref();
+    let tool_call_id = args.tool_call_id.as_deref();
+    let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
+    let tip_start = match chain.tip_hash() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("decision_chain_tip_read_fail: {e}");
+            return 1;
+        }
+    };
+
     if let Err(e) = preflight_honesty_helper() {
         eprintln!("{e}");
+        let _ = chain_append(
+            &chain,
+            &jail_id,
+            ChainVerdict::FailClosed,
+            "preflight_honesty_helper",
+            session_id,
+            tool_call_id,
+        );
+        let _ = chain.verify();
         return 2;
     }
-    let jail_id = args.jail_id.unwrap_or_else(|| fresh_jail_id("mgr"));
 
     let before = match HostSnapshot::capture() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("host snapshot failed: {e}");
+            let _ = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("host_snapshot:{e}"),
+                session_id,
+                tool_call_id,
+            );
             return 1;
         }
     };
+
+    if let Err(code) = chain_append(
+        &chain,
+        &jail_id,
+        ChainVerdict::Launch,
+        "launch_via_helper",
+        session_id,
+        tool_call_id,
+    ) {
+        return code;
+    }
 
     let mut vm = match launch_via_helper(&jail_id) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
+            let _ = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("launch:{e}"),
+                session_id,
+                tool_call_id,
+            );
+            let _ = chain.verify();
             return 2;
         }
     };
 
     let result = run_checks(&mut vm);
     teardown_vm(&mut vm);
+    if let Err(code) = chain_append(
+        &chain,
+        &jail_id,
+        ChainVerdict::Teardown,
+        "teardown_vm",
+        session_id,
+        tool_call_id,
+    ) {
+        return code;
+    }
     std::thread::sleep(Duration::from_secs(3));
 
     let after = match HostSnapshot::capture() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("post-teardown snapshot failed: {e}");
+            let _ = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("post_snapshot:{e}"),
+                session_id,
+                tool_call_id,
+            );
             return 1;
         }
     };
 
     match assert_host_vmm_hygiene(&before, &after) {
         Ok(()) => {
-            // Honest name: VMM residue + golden artifact hashes (not full FS manifest).
             println!("host_vmm_hygiene=PASS");
-            println!("host_untouched=PASS"); // alias for prior receipts
+            println!("host_untouched=PASS");
             println!(
                 "golden_rootfs_sha256={}",
                 after.golden_rootfs_sha256
             );
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::HostUntouched,
+                "host_vmm_hygiene_pass",
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
         }
         Err(e) => {
             eprintln!("host_vmm_hygiene=FAIL: {e}");
             eprintln!("host_untouched=FAIL: {e}");
+            let _ = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("host_vmm_hygiene:{e}"),
+                session_id,
+                tool_call_id,
+            );
             return 1;
         }
     }
 
     match result {
         Ok(summary) => {
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::Prove,
+                "prove_checks_ok",
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
+            let tip = match chain.tip_hash() {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("decision_chain_tip_read_fail: {e}");
+                    return 1;
+                }
+            };
+            if tip == tip_start {
+                eprintln!("decision_chain_tip_unchanged: prove recorded no new rows");
+                return 1;
+            }
+            println!("decision_chain_tip={tip}");
+            println!("decision_chain_path={}", chain.path().display());
+            if let Err(e) = chain.verify() {
+                eprintln!("decision_chain_verify=FAIL: {e}");
+                return 1;
+            }
+            println!("decision_chain_verify=PASS");
             println!("{}", serde_json::to_string_pretty(&summary).unwrap());
             0
         }
         Err(e) => {
             eprintln!("prove failed: {e}");
+            let _ = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("prove_checks:{e}"),
+                session_id,
+                tool_call_id,
+            );
             1
         }
     }

@@ -133,13 +133,24 @@ fn validate_allowlisted(path: &Path, allowlist: &[&str]) -> Result<PathBuf, Vali
     let canonical = path
         .canonicalize()
         .map_err(|_| ValidationError::NonCanonicalPath(path.display().to_string()))?;
-    let canonical_str = canonical.to_string_lossy();
-    if allowlist.iter().any(|allowed| *allowed == canonical_str) {
+    // Compare canonical forms so /opt/aegis/... → symlink → ~/isolation-layer/... still matches.
+    let allowed = allowlist.iter().any(|entry| {
+        Path::new(entry)
+            .canonicalize()
+            .map(|a| a == canonical)
+            .unwrap_or(false)
+            || *entry == canonical.to_string_lossy()
+    });
+    if allowed {
         Ok(canonical)
     } else if allowlist == ALLOWED_KERNEL_PATHS {
-        Err(ValidationError::KernelNotAllowed(canonical_str.into_owned()))
+        Err(ValidationError::KernelNotAllowed(
+            canonical.to_string_lossy().into_owned(),
+        ))
     } else {
-        Err(ValidationError::RootfsNotAllowed(canonical_str.into_owned()))
+        Err(ValidationError::RootfsNotAllowed(
+            canonical.to_string_lossy().into_owned(),
+        ))
     }
 }
 

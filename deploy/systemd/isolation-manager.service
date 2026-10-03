@@ -1,0 +1,44 @@
+# isolation-manager — long-lived unprivileged manager (spine-1)
+#
+# Guests are ephemeral. This unit keeps the manager process/socket available.
+# Idle state: no Firecracker process.
+#
+# Install (Landen):
+#   sudo install -o root -g root -m 0644 deploy/systemd/isolation-manager.service \
+#     /etc/systemd/system/isolation-manager.service
+#   # OR user unit:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd/isolation-manager.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now isolation-manager
+#
+# Health is not is-active alone — run scripts/guest-gone-probe.sh after a prove job.
+
+[Unit]
+Description=Aegis Isolation Manager (spine-1)
+After=network.target
+Documentation=file:///home/landen/isolation-layer/docs/PLAN-live-box.md
+
+[Service]
+Type=simple
+User=landen
+Group=landen
+WorkingDirectory=/home/landen/isolation-layer
+Environment=AEGIS_DECISION_CHAIN=/home/landen/.local/state/aegis/decision-chain.jsonl
+Environment=AEGIS_REJECT_LOG=/home/landen/.local/state/aegis/vestibule-reject.jsonl
+Environment=RUST_LOG=info
+# Long-lived UDS serve → prove → sudo -n /usr/local/bin/jailer-launch.
+# NoNewPrivileges must stay off: sudo/setuid is required for the jailer helper.
+# Do not enable until dest-read prove-via-socket is green (unit ships disabled).
+ExecStartPre=/usr/bin/test -x /home/landen/isolation-layer/target/release/isolation-manager
+ExecStart=/home/landen/isolation-layer/target/release/isolation-manager serve --socket /home/landen/.local/state/aegis/isolation-manager.sock
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
