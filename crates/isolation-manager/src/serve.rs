@@ -1,6 +1,6 @@
-//! Long-lived manager socket (spine-1).
+//! Long-lived manager socket.
 //! Accepts one-line JSON requests: {"cmd":"prove","session_id":"?","tool_call_id":"?"}
-//! Unauthorized peers: OS socket mode 0o600 — only owner may connect.
+//! Unauthorized peers: OS socket mode 0o600; only the owner may connect.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;

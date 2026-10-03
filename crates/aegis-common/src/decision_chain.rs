@@ -1,4 +1,4 @@
-//! Host decision chain — append-only jsonl with prev+sha256 (spine-1).
+//! Host decision chain: append-only jsonl with prev and sha256.
 //!
 //! Guest bytes are never trusted as log truth. Rows are host-written only.
 
