@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Guest-gone probe after isolation-manager prove.
-# Always checks residue, even when prove fails.
+# Always checks residue for THIS run, even when prove fails.
 set -uo pipefail
 
 CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
@@ -11,8 +11,8 @@ if [[ -f "$CHAIN" ]]; then
 fi
 
 echo "guest-gone: running prove..."
-set +e
 OUT=$(mktemp)
+set +e
 cargo run --release -q -p isolation-manager -- prove \
   --require-ancestor "$ANCHOR" \
   "$@" 2>&1 | tee "$OUT"
@@ -35,11 +35,16 @@ if pgrep -af '[j]ailer' >/dev/null 2>&1; then
   pgrep -af '[j]ailer' || true
   residue_fail=1
 fi
-if compgen -G '/opt/aegis/isolation-layer/jailer/firecracker/mgr-*' >/dev/null 2>&1; then
-  echo "FAIL: leftover mgr jail directory"
-  ls -la /opt/aegis/isolation-layer/jailer/firecracker/mgr-* || true
-  residue_fail=1
-fi
+
+while read -r jid; do
+  [[ -z "$jid" ]] && continue
+  d="/opt/aegis/isolation-layer/jailer/firecracker/$jid"
+  if [[ -e "$d" ]]; then
+    echo "FAIL: leftover jail dir for this run: $d"
+    residue_fail=1
+  fi
+done < <(grep -oE 'jail_id=(mgr|insp)-[0-9]+-[0-9]+' "$OUT" | sed 's/^jail_id=//' | sort -u)
+
 for g in /tmp/aegis-inspect-prove-* /tmp/aegis-dropbox-prove-*; do
   if [[ -e "$g" ]]; then
     echo "FAIL: leftover staging $g"
