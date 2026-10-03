@@ -49,6 +49,8 @@ pub fn run(args: ProveArgs) -> i32 {
     let session_id = args.session_id.as_deref();
     let tool_call_id = args.tool_call_id.as_deref();
     let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
+    println!("decision_chain_path={}", chain.path().display());
+
     let tip_start = match chain.tip_hash() {
         Ok(t) => t,
         Err(e) => {
@@ -56,6 +58,34 @@ pub fn run(args: ProveArgs) -> i32 {
             return 1;
         }
     };
+
+    if let Err(e) = chain.verify() {
+        eprintln!("decision_chain_verify=FAIL: {e}");
+        return 1;
+    }
+    println!("decision_chain_verify=PASS");
+
+    match (&args.require_ancestor, args.allow_genesis, tip_start.as_str()) {
+        (Some(anchor), _, _) => {
+            if let Err(e) = chain.require_ancestor(anchor) {
+                eprintln!("decision_chain_anchor=FAIL: {e}");
+                return 1;
+            }
+            println!("decision_chain_anchor=PASS");
+        }
+        (None, true, _) => {
+            println!("decision_chain_anchor=GENESIS");
+        }
+        (None, false, tip) if tip.chars().all(|c| c == '0') => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: empty chain needs --allow-genesis or --require-ancestor"
+            );
+            return 1;
+        }
+        (None, false, _) => {
+            println!("decision_chain_anchor=UNCHECKED");
+        }
+    }
 
     if let Err(e) = preflight_honesty_helper() {
         eprintln!("{e}");
@@ -67,7 +97,6 @@ pub fn run(args: ProveArgs) -> i32 {
             session_id,
             tool_call_id,
         );
-        let _ = chain.verify();
         return 2;
     }
 
@@ -102,15 +131,16 @@ pub fn run(args: ProveArgs) -> i32 {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
-            let _ = chain_append(
+            if let Err(code) = chain_append(
                 &chain,
                 &jail_id,
                 ChainVerdict::FailClosed,
                 &format!("launch:{e}"),
                 session_id,
                 tool_call_id,
-            );
-            let _ = chain.verify();
+            ) {
+                return code;
+            }
             return 2;
         }
     };
@@ -133,14 +163,16 @@ pub fn run(args: ProveArgs) -> i32 {
         Ok(s) => s,
         Err(e) => {
             eprintln!("post-teardown snapshot failed: {e}");
-            let _ = chain_append(
+            if let Err(code) = chain_append(
                 &chain,
                 &jail_id,
                 ChainVerdict::FailClosed,
                 &format!("post_snapshot:{e}"),
                 session_id,
                 tool_call_id,
-            );
+            ) {
+                return code;
+            }
             return 1;
         }
     };
@@ -167,14 +199,16 @@ pub fn run(args: ProveArgs) -> i32 {
         Err(e) => {
             eprintln!("host_vmm_hygiene=FAIL: {e}");
             eprintln!("host_untouched=FAIL: {e}");
-            let _ = chain_append(
+            if let Err(code) = chain_append(
                 &chain,
                 &jail_id,
                 ChainVerdict::FailClosed,
                 &format!("host_vmm_hygiene:{e}"),
                 session_id,
                 tool_call_id,
-            );
+            ) {
+                return code;
+            }
             return 1;
         }
     }
@@ -203,7 +237,6 @@ pub fn run(args: ProveArgs) -> i32 {
                 return 1;
             }
             println!("decision_chain_tip={tip}");
-            println!("decision_chain_path={}", chain.path().display());
             if let Err(e) = chain.verify() {
                 eprintln!("decision_chain_verify=FAIL: {e}");
                 return 1;
@@ -214,14 +247,16 @@ pub fn run(args: ProveArgs) -> i32 {
         }
         Err(e) => {
             eprintln!("prove failed: {e}");
-            let _ = chain_append(
+            if let Err(code) = chain_append(
                 &chain,
                 &jail_id,
                 ChainVerdict::FailClosed,
                 &format!("prove_checks:{e}"),
                 session_id,
                 tool_call_id,
-            );
+            ) {
+                return code;
+            }
             1
         }
     }

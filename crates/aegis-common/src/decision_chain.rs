@@ -124,6 +124,25 @@ impl DecisionChain {
             .unwrap_or_else(|| "0".repeat(64)))
     }
 
+    /// Refuse to treat this file as the named record unless `sha256` appears.
+    /// Empty chain fails; use an explicit genesis path at the call site.
+    pub fn require_ancestor(&self, sha256: &str) -> Result<(), ChainError> {
+        let want = sha256.trim();
+        if want.is_empty() {
+            return Err(ChainError::Verify("anchor empty".into()));
+        }
+        let rows = self.read_all()?;
+        if rows.is_empty() {
+            return Err(ChainError::Verify("anchor absent: empty chain".into()));
+        }
+        if rows.iter().any(|r| r.sha256 == want) {
+            return Ok(());
+        }
+        Err(ChainError::Verify(format!(
+            "anchor absent: {want}"
+        )))
+    }
+
     pub fn read_all(&self) -> Result<Vec<ChainRow>, ChainError> {
         if !self.path.exists() {
             return Ok(Vec::new());
@@ -179,17 +198,27 @@ impl DecisionChain {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        #[cfg(unix)]
+        let mut f = {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            let created = !self.path.exists();
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&self.path)?;
+            if created {
+                std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600))?;
+            }
+            file
+        };
+        #[cfg(not(unix))]
         let mut f = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)?;
         writeln!(f, "{}", serde_json::to_string(&row)?)?;
         f.flush()?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600))?;
-        }
         Ok(row)
     }
 
@@ -305,6 +334,29 @@ mod tests {
         let c2 = DecisionChain::open(&path);
         c2.append("j", ChainVerdict::Prove, "b", None, None).unwrap();
         c2.verify().unwrap();
+    }
+
+    #[test]
+    fn require_ancestor_finds_prior_tip() {
+        let dir = tempfile_dir();
+        let path = dir.join("chain.jsonl");
+        let c = DecisionChain::open(&path);
+        let first = c
+            .append("j", ChainVerdict::Launch, "a", None, None)
+            .unwrap();
+        c.append("j", ChainVerdict::Prove, "b", None, None).unwrap();
+        c.require_ancestor(&first.sha256).unwrap();
+        let err = c.require_ancestor(&"f".repeat(64)).unwrap_err();
+        assert!(matches!(err, ChainError::Verify(_)));
+    }
+
+    #[test]
+    fn require_ancestor_rejects_empty() {
+        let dir = tempfile_dir();
+        let path = dir.join("missing.jsonl");
+        let c = DecisionChain::open(&path);
+        let err = c.require_ancestor(&"a".repeat(64)).unwrap_err();
+        assert!(matches!(err, ChainError::Verify(_)));
     }
 
     fn tempfile_dir() -> PathBuf {

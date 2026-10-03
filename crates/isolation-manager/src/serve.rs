@@ -74,6 +74,8 @@ pub fn run(socket_path: PathBuf) -> i32 {
             jail_id: req.jail_id,
             session_id: req.session_id,
             tool_call_id: req.tool_call_id,
+            require_ancestor: std::env::var("REQUIRE_ANCESTOR").ok().filter(|s| !s.is_empty()),
+            allow_genesis: std::env::var("ALLOW_GENESIS").map(|v| v == "1").unwrap_or(false),
         });
         let _ = writeln!(stream, "{{\"ok\":{},\"exit\":{code}}}", code == 0);
     }

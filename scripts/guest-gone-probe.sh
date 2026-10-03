@@ -1,57 +1,81 @@
 #!/usr/bin/env bash
-# Guest-gone probe after isolation-manager prove (spine-1).
-# Fail if Firecracker still running, jail dir left, or chain did not grow / verify.
-set -euo pipefail
+# Guest-gone probe after isolation-manager prove.
+# Always checks residue, even when prove fails.
+set -uo pipefail
 
 CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
+ANCHOR="${REQUIRE_ANCESTOR:-243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c}"
 BEFORE_LEN=0
 if [[ -f "$CHAIN" ]]; then
   BEFORE_LEN=$(wc -l < "$CHAIN" | tr -d ' ')
 fi
 
 echo "guest-gone: running prove..."
-cargo run -q -p isolation-manager -- prove "$@"
-EC=$?
+set +e
+OUT=$(mktemp)
+cargo run --release -q -p isolation-manager -- prove \
+  --require-ancestor "$ANCHOR" \
+  "$@" 2>&1 | tee "$OUT"
+EC=${PIPESTATUS[0]}
+set -e
 
 AFTER_LEN=0
 if [[ -f "$CHAIN" ]]; then
   AFTER_LEN=$(wc -l < "$CHAIN" | tr -d ' ')
 fi
 
-if pgrep -af firecracker >/dev/null 2>&1; then
+residue_fail=0
+if pgrep -af '[f]irecracker' >/dev/null 2>&1; then
   echo "FAIL: firecracker still running"
-  pgrep -af firecracker || true
+  pgrep -af '[f]irecracker' || true
+  residue_fail=1
+fi
+if pgrep -af '[j]ailer' >/dev/null 2>&1; then
+  echo "FAIL: jailer still running"
+  pgrep -af '[j]ailer' || true
+  residue_fail=1
+fi
+if compgen -G '/opt/aegis/isolation-layer/jailer/firecracker/mgr-*' >/dev/null 2>&1; then
+  echo "FAIL: leftover mgr jail directory"
+  ls -la /opt/aegis/isolation-layer/jailer/firecracker/mgr-* || true
+  residue_fail=1
+fi
+for g in /tmp/aegis-inspect-prove-* /tmp/aegis-dropbox-prove-*; do
+  if [[ -e "$g" ]]; then
+    echo "FAIL: leftover staging $g"
+    residue_fail=1
+  fi
+done
+
+if [[ "$residue_fail" -ne 0 ]]; then
+  rm -f "$OUT"
   exit 1
 fi
 
-if [[ "$AFTER_LEN" -le "$BEFORE_LEN" ]]; then
-  echo "FAIL: decision chain did not grow ($BEFORE_LEN -> $AFTER_LEN)"
-  exit 1
+if [[ "$EC" -eq 0 ]]; then
+  if [[ "$AFTER_LEN" -le "$BEFORE_LEN" ]]; then
+    echo "FAIL: decision chain did not grow ($BEFORE_LEN -> $AFTER_LEN)"
+    rm -f "$OUT"
+    exit 1
+  fi
+  if ! grep -q 'decision_chain_verify=PASS' "$OUT"; then
+    echo "FAIL: missing decision_chain_verify=PASS"
+    rm -f "$OUT"
+    exit 1
+  fi
+  if ! grep -q 'decision_chain_anchor=PASS' "$OUT"; then
+    echo "FAIL: missing decision_chain_anchor=PASS"
+    rm -f "$OUT"
+    exit 1
+  fi
 fi
 
-python3 - <<'PY' "$CHAIN"
-import json, sys, hashlib
-path = sys.argv[1]
-prev = "0" * 64
-rows = []
-with open(path, encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        rows.append(json.loads(line))
-for i, r in enumerate(rows):
-    if r.get("prev") != prev:
-        raise SystemExit(f"verify fail row {i}: prev")
-    # digest check delegated to Rust tests; here check linkage only
-    prev = r["sha256"]
-print(f"chain_rows={len(rows)} tip={prev[:12]}")
-PY
+rm -f "$OUT"
 
 if [[ "$EC" -ne 0 ]]; then
-  echo "FAIL: prove exit $EC (chain may still have fail_closed rows)"
+  echo "FAIL: prove exit $EC (residue clean; chain may hold fail_closed rows)"
   exit "$EC"
 fi
 
-echo "guest-gone=PASS prove_exit=0 chain_grew=yes no_firecracker=yes"
+echo "guest-gone=PASS prove_exit=0 chain_grew=yes no_firecracker=yes no_jailer=yes"
 exit 0

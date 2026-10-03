@@ -59,6 +59,12 @@ pub struct ProveArgs {
     /// Optional join key: tool_call_id (host-supplied).
     #[arg(long)]
     pub tool_call_id: Option<String>,
+    /// Require this row sha256 already in the host decision chain (continuity).
+    #[arg(long)]
+    pub require_ancestor: Option<String>,
+    /// Allow an empty chain (no prior tip). Mutually exclusive with a missing ancestor.
+    #[arg(long, default_value_t = false)]
+    pub allow_genesis: bool,
 }
 
 #[derive(Debug, Parser)]
