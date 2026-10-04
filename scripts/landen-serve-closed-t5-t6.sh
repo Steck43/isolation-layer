@@ -66,8 +66,11 @@ sleep 1
 bash scripts/serve-uds-prove.sh one
 echo T5_OK
 
-echo "=== T6 enable (explicit) ==="
-read -r -p "Type ENABLE to systemctl enable + reboot: " ans
-test "$ans" = "ENABLE"
-sudo systemctl enable isolation-manager.service
-sudo reboot
+echo "=== T5 complete (unit started, not enabled) ==="
+echo "For T6 enable+reboot, run with SERVE_ENABLE=1:"
+echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh"
+if [[ "${SERVE_ENABLE:-}" == "1" ]]; then
+  sudo systemctl enable isolation-manager.service
+  echo "enabled; rebooting"
+  sudo reboot
+fi
