@@ -1,9 +1,9 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::net::Shutdown;
+use std::os::unix::fs::chown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::os::unix::fs::chown;
 use std::time::Duration;
 
 use thiserror::Error;
@@ -102,10 +102,7 @@ pub fn prepare_jail_root(req: &LaunchRequest) -> Result<PathBuf, FcError> {
     }
     fs::create_dir_all(&jail_root)?;
 
-    hardlink_or_copy(
-        &req.kernel_path,
-        &jail_root.join("vmlinux-6.1.176"),
-    )?;
+    hardlink_or_copy(&req.kernel_path, &jail_root.join("vmlinux-6.1.176"))?;
     // Rootfs: copy only — never hardlink (guest disk is writable in Q0 prove path).
     // Helper runs as root; jailer drops to req.uid/gid. Writable drive must be
     // owned by that uid or open(O_RDWR) returns EACCES (others have read only).
@@ -141,7 +138,9 @@ pub fn vsock_roundtrip(vsock_base: &Path, port: u16, timeout: Duration) -> Resul
     let _ = conn.shutdown(Shutdown::Write);
     let _ = fs::remove_file(&listen_path);
     if data.is_empty() {
-        return Err(FcError::Request("vsock roundtrip received empty payload".into()));
+        return Err(FcError::Request(
+            "vsock roundtrip received empty payload".into(),
+        ));
     }
     Ok(String::from_utf8_lossy(&data).into_owned())
 }
@@ -180,10 +179,6 @@ pub fn wait_for_boot(serial: &mut impl Read, timeout: Duration) -> Result<String
         &acc[acc.len().saturating_sub(400)..]
     )))
 }
-
-
-
-
 
 /// Guest must send HELLO first; host then pushes body; guest replies sha256 (B3.2b).
 /// Max bytes accepted for inspector guest reply line (DoS bound).
@@ -327,4 +322,51 @@ pub fn utf8_tail(s: &str, max_bytes: usize) -> &str {
         idx += 1;
     }
     &s[idx..]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn vsock_inspect_reply_rejects_non_utf8() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("aegis-vsock-utf8-{n}"));
+        fs::create_dir_all(&dir).unwrap();
+        let vsock_base = dir.join("vsock.sock");
+        fs::write(&vsock_base, b"").unwrap();
+        let listen_path = PathBuf::from(format!("{}_91", vsock_base.display()));
+        let guest = thread::spawn(move || {
+            for _ in 0..200 {
+                if listen_path.exists() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            let mut s = UnixStream::connect(&listen_path).expect("connect listen");
+            s.write_all(b"HELLO\n").unwrap();
+            let mut lenb = [0u8; 4];
+            s.read_exact(&mut lenb).unwrap();
+            let n = u32::from_be_bytes(lenb) as usize;
+            let mut body = vec![0u8; n];
+            s.read_exact(&mut body).unwrap();
+            s.write_all(&[0xff, 0xfe, 0xfd, b'\n']).unwrap();
+        });
+        let err = vsock_inspect_reply(&vsock_base, 91, b"hi", Duration::from_millis(800), None)
+            .unwrap_err();
+        let _ = guest.join();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not valid UTF-8"),
+            "UTF-8 reject must surface, got {msg}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
 }

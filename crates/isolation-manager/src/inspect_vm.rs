@@ -8,9 +8,7 @@ use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use inspector::{
-    decide_disposition, parse_verdict_line, Disposition, InspectOutcome, StagedBlob,
-};
+use inspector::{decide_disposition, parse_verdict_line, Disposition, InspectOutcome, StagedBlob};
 
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 
@@ -128,8 +126,7 @@ fn run_inspect_body(
         .unwrap()
         .map_err(|e| format!("inspector vsock failed: {e}"))?;
 
-    let claim = parse_verdict_line(&reply_line)
-        .map_err(|e| format!("inspector verdict schema: {e}; line={reply_line:?}"))?;
+    let claim = claim_from_reply_line(&reply_line)?;
     let host_hash_match = claim.content_hash == staged.hash;
     let disposition = decide_disposition(&claim, &staged.hash);
 
@@ -177,4 +174,43 @@ pub fn run_disposable_inspect_expect(
         ));
     }
     Ok(r)
+}
+
+/// Parse the guest reply. A bare hash is a schema error, not a clear verdict.
+fn claim_from_reply_line(reply_line: &str) -> Result<inspector::InspectVerdict, String> {
+    parse_verdict_line(reply_line)
+        .map_err(|e| format!("inspector verdict schema: {e}; line={reply_line:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inspector::InspectOutcome;
+
+    #[test]
+    fn parse_failure_is_not_a_clear_verdict() {
+        let bare = "a".repeat(64);
+        match claim_from_reply_line(&bare) {
+            Ok(claim) => panic!(
+                "bare hash must not become a verdict (got {:?})",
+                claim.outcome
+            ),
+            Err(e) => {
+                assert!(
+                    e.contains("inspector verdict schema"),
+                    "parse failure must stay a schema error: {e}"
+                );
+                assert!(
+                    !e.to_ascii_lowercase().contains("clear"),
+                    "parse failure must not name a clear verdict: {e}"
+                );
+            }
+        }
+        let clear = format!(
+            r#"{{"kind":"inspect_verdict","schema_version":2,"content_hash":"{}","outcome":"clear","reasons":["hash_ok"]}}"#,
+            bare
+        );
+        let ok = claim_from_reply_line(&clear).unwrap();
+        assert_eq!(ok.outcome, InspectOutcome::Clear);
+    }
 }
