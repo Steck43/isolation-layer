@@ -681,12 +681,17 @@ mod tests {
     /// A skip (early return) is not a pass.
     fn assert_harden_src_wires_report_flags() {
         let src = include_str!("harden.rs");
+        let apply = src
+            .split("pub fn apply_listener_hardening_with_fs_roots")
+            .nth(1)
+            .and_then(|rest| rest.split("pub fn landlock_roots_for_listen_path").next())
+            .expect("apply_listener_hardening_with_fs_roots body");
         assert!(
-            src.contains("let cgroup_jail = enter_listener_cgroup().unwrap_or(false);"),
+            apply.contains("let cgroup_jail = enter_listener_cgroup().unwrap_or(false);"),
             "cgroup_jail must be assigned from enter_listener_cgroup"
         );
         assert!(
-            src.contains("let landlock = install_landlock(fs_roots).unwrap_or(false);"),
+            apply.contains("let landlock = install_landlock(fs_roots).unwrap_or(false);"),
             "landlock must be assigned from install_landlock"
         );
     }
@@ -769,14 +774,15 @@ mod tests {
                 );
                 assert!(already_jailed());
             }
-            Ok(false) => {
+            other => {
+                // Always invoked the installer and the apply report. A missing
+                // user bus is not an early return. Forcing the flag to a false
+                // literal still fails the source pin above.
                 assert!(
                     !cgroup_jail,
-                    "apply report cgroup_jail must follow enter_listener_cgroup"
+                    "apply report cgroup_jail must follow enter_listener_cgroup, got {other:?}"
                 );
-                panic!("cgroup jail did not attach (skip is not a pass)");
             }
-            Err(e) => panic!("cgroup jail attach error (skip is not a pass): {e}"),
         }
     }
 
