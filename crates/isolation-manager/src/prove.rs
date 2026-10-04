@@ -28,9 +28,29 @@ fn chain_append(
     }
 }
 
+fn file_sha256_hex(path: &str) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+    let dig = Sha256::digest(&bytes);
+    Ok(dig.iter().map(|b| format!("{b:02x}")).collect())
+}
+
 fn preflight_honesty_helper() -> Result<(), String> {
     use std::process::Command;
     let helper = aegis_common::paths::JAILER_LAUNCH_BIN;
+    let actual = file_sha256_hex(helper)?;
+    println!("jailer_launch_sha256={actual}");
+    if let Ok(want) = std::env::var("AEGIS_JAILER_SHA256") {
+        let want = want.trim().to_ascii_lowercase();
+        if want != actual {
+            return Err(format!(
+                "BLOCKED: installed {helper} sha256 {actual} != AEGIS_JAILER_SHA256={want}"
+            ));
+        }
+        println!("jailer_launch_sha256_match=PASS");
+    } else {
+        println!("jailer_launch_sha256_match=UNPINNED");
+    }
     let out = Command::new("strings")
         .arg(helper)
         .output()
@@ -49,7 +69,11 @@ pub fn run(args: ProveArgs) -> i32 {
     let session_id = args.session_id.as_deref();
     let tool_call_id = args.tool_call_id.as_deref();
     let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
+    // Print before launch so residue scripts can name this jail on sad paths.
+    println!("jail_id={jail_id}");
     println!("decision_chain_path={}", chain.path().display());
+    println!("decision_chain_covers=main_jail");
+    println!("inspector_chain=out_of_band");
 
     let tip_start = match chain.tip_hash() {
         Ok(t) => t,
@@ -65,7 +89,8 @@ pub fn run(args: ProveArgs) -> i32 {
     }
     println!("decision_chain_verify=PASS");
 
-    match (&args.require_ancestor, args.allow_genesis, tip_start.as_str()) {
+    let empty = tip_start.chars().all(|c| c == '0');
+    match (&args.require_ancestor, args.allow_genesis, empty) {
         (Some(anchor), _, _) => {
             if let Err(e) = chain.require_ancestor(anchor) {
                 eprintln!("decision_chain_anchor=FAIL: {e}");
@@ -73,30 +98,41 @@ pub fn run(args: ProveArgs) -> i32 {
             }
             println!("decision_chain_anchor=PASS");
         }
-        (None, true, _) => {
+        (None, true, true) => {
             println!("decision_chain_anchor=GENESIS");
         }
-        (None, false, tip) if tip.chars().all(|c| c == '0') => {
+        (None, true, false) => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: --allow-genesis refused on non-empty chain"
+            );
+            return 1;
+        }
+        (None, false, true) => {
             eprintln!(
                 "decision_chain_anchor=FAIL: empty chain needs --allow-genesis or --require-ancestor"
             );
             return 1;
         }
-        (None, false, _) => {
-            println!("decision_chain_anchor=UNCHECKED");
+        (None, false, false) => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: non-empty chain requires --require-ancestor (UNCHECKED refused)"
+            );
+            return 1;
         }
     }
 
     if let Err(e) = preflight_honesty_helper() {
         eprintln!("{e}");
-        let _ = chain_append(
+        if let Err(code) = chain_append(
             &chain,
             &jail_id,
             ChainVerdict::FailClosed,
             "preflight_honesty_helper",
             session_id,
             tool_call_id,
-        );
+        ) {
+            return code;
+        }
         return 2;
     }
 
@@ -104,14 +140,16 @@ pub fn run(args: ProveArgs) -> i32 {
         Ok(s) => s,
         Err(e) => {
             eprintln!("host snapshot failed: {e}");
-            let _ = chain_append(
+            if let Err(code) = chain_append(
                 &chain,
                 &jail_id,
                 ChainVerdict::FailClosed,
                 &format!("host_snapshot:{e}"),
                 session_id,
                 tool_call_id,
-            );
+            ) {
+                return code;
+            }
             return 1;
         }
     };
@@ -146,16 +184,30 @@ pub fn run(args: ProveArgs) -> i32 {
     };
 
     let result = run_checks(&mut vm);
-    teardown_vm(&mut vm);
+    // Idempotent: run_checks may already have torn down the main jail for inspector.
+    let teardown_status = match teardown_vm(&mut vm) {
+        Ok(()) => "teardown_vm_ok".to_string(),
+        Err(e) => {
+            eprintln!("teardown_vm=FAIL: {e}");
+            format!("teardown_vm_fail:{e}")
+        }
+    };
     if let Err(code) = chain_append(
         &chain,
         &jail_id,
-        ChainVerdict::Teardown,
-        "teardown_vm",
+        if teardown_status.starts_with("teardown_vm_ok") {
+            ChainVerdict::Teardown
+        } else {
+            ChainVerdict::FailClosed
+        },
+        &teardown_status,
         session_id,
         tool_call_id,
     ) {
         return code;
+    }
+    if !teardown_status.starts_with("teardown_vm_ok") {
+        return 1;
     }
     std::thread::sleep(Duration::from_secs(3));
 
@@ -242,7 +294,13 @@ pub fn run(args: ProveArgs) -> i32 {
                 return 1;
             }
             println!("decision_chain_verify=PASS");
-            println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+            match serde_json::to_string_pretty(&summary) {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    eprintln!("summary_json_fail: {e}");
+                    return 1;
+                }
+            }
             0
         }
         Err(e) => {
@@ -330,7 +388,10 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     stdin.flush().map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_secs(3));
 
-    let vsock_rx = vsock_handle.join().unwrap().map_err(|e| e.to_string())?;
+    let vsock_rx = vsock_handle
+        .join()
+        .map_err(|_| "vsock thread panicked".to_string())?
+        .map_err(|e| e.to_string())?;
     let vsock_ok = !vsock_rx.is_empty();
     println!("vsock_roundtrip_ok={vsock_ok}");
     if vsock_ok {
@@ -374,7 +435,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     let vestibule_msg = vestibule_handle
         .join()
-        .unwrap()
+        .map_err(|_| "vestibule thread panicked".to_string())?
         .map_err(|e| format!("vestibule framed prove failed: {e}"))?;
     let vestibule_ok = vestibule_msg.kind == "result"
         && vestibule_msg.task_id == "prove-b3"
@@ -416,7 +477,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     // Tear down prove VM before disposable inspector (single-guest surface for inspect receipt).
     vm.stdin = Some(stdin);
-    teardown_vm(vm);
+    let _ = teardown_vm(vm);
     thread::sleep(Duration::from_secs(2));
 
     // B3.2d: disposable FC inspector — claim schema + host disposition Advance.

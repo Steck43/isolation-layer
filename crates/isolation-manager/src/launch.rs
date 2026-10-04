@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -18,16 +18,67 @@ pub fn fresh_jail_id(prefix: &str) -> String {
     format!("{prefix}-{n}-{pid}")
 }
 
-
 #[derive(Debug)]
 pub struct LaunchedVm {
     pub jail_id: String,
     pub jail_root: PathBuf,
     pub api_sock: PathBuf,
     pub vsock_uds: PathBuf,
-    pub child: std::process::Child,
+    pub child: Child,
     pub serial_buf: Arc<Mutex<String>>,
     pub stdin: Option<std::process::ChildStdin>,
+    /// When true, [`teardown_vm`] already ran (or Drop cleaned). Idempotent teardown.
+    cleaned: bool,
+}
+
+impl Drop for LaunchedVm {
+    fn drop(&mut self) {
+        if !self.cleaned {
+            let _ = teardown_vm(self);
+        }
+    }
+}
+
+/// Kill helper child + jailer --cleanup for a jail id that never became LaunchedVm.
+struct SpawnGuard {
+    child: Option<Child>,
+    jail_id: String,
+    helper: PathBuf,
+}
+
+impl Drop for SpawnGuard {
+    fn drop(&mut self) {
+        // Only clean when we still own the child (error path). disarm() takes
+        // the child first so success does not kill the live guest.
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+            helper_cleanup(&self.helper, &self.jail_id);
+        }
+    }
+}
+
+impl SpawnGuard {
+    fn disarm(mut self) -> Child {
+        self.child.take().expect("spawn guard child")
+    }
+}
+
+fn helper_cleanup(helper: &PathBuf, jail_id: &str) {
+    let status = Command::new("sudo")
+        .arg("-n")
+        .arg(helper)
+        .arg("--cleanup")
+        .arg("--jail-id")
+        .arg(jail_id)
+        .status();
+    if let Ok(st) = status {
+        if !st.success() {
+            eprintln!("warning: helper cleanup exited {st}");
+        }
+    } else if let Err(e) = status {
+        eprintln!("warning: helper cleanup spawn failed: {e}");
+    }
 }
 
 pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
@@ -46,7 +97,7 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
     .map_err(|e| format!("local validation failed: {e}"))?;
 
     let helper = resolve_helper_path();
-    let mut child = Command::new("sudo")
+    let child = Command::new("sudo")
         .arg("-n")
         .arg(&helper)
         .arg("--jail-id")
@@ -66,10 +117,23 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
         .spawn()
         .map_err(|e| format!("sudo spawn failed: {e}"))?;
 
+    let mut guard = SpawnGuard {
+        child: Some(child),
+        jail_id: jail_id.to_string(),
+        helper: helper.clone(),
+    };
+    let child_ref = guard.child.as_mut().unwrap();
+
     // Read helper metadata line one byte at a time (no BufReader — avoids
     // discarding buffered serial on into_inner). Then drain stdout+stderr.
-    let mut stdout = child.stdout.take().ok_or("missing stdout")?;
-    let stderr = child.stderr.take().ok_or("missing stderr")?;
+    let mut stdout = child_ref
+        .stdout
+        .take()
+        .ok_or_else(|| "missing stdout".to_string())?;
+    let stderr = child_ref
+        .stderr
+        .take()
+        .ok_or_else(|| "missing stderr".to_string())?;
     let mut meta_raw = Vec::new();
     loop {
         let mut b = [0u8; 1];
@@ -93,8 +157,11 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
     thread::spawn(move || drain_to_buf(stderr, buf_err));
 
     std::thread::sleep(Duration::from_millis(500));
-    if let Some(status) = child.try_wait().ok().flatten() {
-        let stderr_msg = serial_buf.lock().unwrap().clone();
+    if let Some(status) = child_ref.try_wait().ok().flatten() {
+        let stderr_msg = serial_buf
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         return Err(blocked_message(
             &helper,
             jail_id,
@@ -107,13 +174,26 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
 
     let meta: serde_json::Value = serde_json::from_str(meta_line.trim())
         .map_err(|e| format!("bad helper metadata: {e}; line={meta_line:?}"))?;
-    let jail_root = PathBuf::from(meta["jail_root"].as_str().ok_or("missing jail_root")?);
-    let api_sock = PathBuf::from(meta["api_sock"].as_str().ok_or("missing api_sock")?);
-    let vsock_uds = PathBuf::from(meta["vsock_uds"].as_str().ok_or("missing vsock_uds")?);
+    let jail_root = PathBuf::from(
+        meta["jail_root"]
+            .as_str()
+            .ok_or_else(|| "missing jail_root".to_string())?,
+    );
+    let api_sock = PathBuf::from(
+        meta["api_sock"]
+            .as_str()
+            .ok_or_else(|| "missing api_sock".to_string())?,
+    );
+    let vsock_uds = PathBuf::from(
+        meta["vsock_uds"]
+            .as_str()
+            .ok_or_else(|| "missing vsock_uds".to_string())?,
+    );
 
     aegis_common::firecracker::wait_for_api_socket(&api_sock, Duration::from_secs(15))
         .map_err(|e| e.to_string())?;
 
+    let mut child = guard.disarm();
     let stdin = child.stdin.take();
     Ok(LaunchedVm {
         jail_id: jail_id.to_string(),
@@ -123,6 +203,7 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
         child,
         serial_buf,
         stdin,
+        cleaned: false,
     })
 }
 
@@ -132,8 +213,9 @@ fn drain_to_buf(mut out: impl Read, buf: Arc<Mutex<String>>) {
         match out.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-                let mut guard = buf.lock().unwrap();
-                guard.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                if let Ok(mut guard) = buf.lock() {
+                    guard.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                }
             }
             Err(_) => break,
         }
@@ -168,7 +250,12 @@ fn blocked_message(
     }
 }
 
-pub fn teardown_vm(vm: &mut LaunchedVm) {
+/// Tear down guest + helper. Idempotent. Returns Err if cleanup could not confirm.
+pub fn teardown_vm(vm: &mut LaunchedVm) -> Result<(), String> {
+    if vm.cleaned {
+        return Ok(());
+    }
+    let mut errors = Vec::new();
     let _ = aegis_common::firecracker::send_ctrl_alt_del(&vm.api_sock);
     for _ in 0..50 {
         if vm.child.try_wait().ok().flatten().is_some() {
@@ -199,7 +286,10 @@ pub fn teardown_vm(vm: &mut LaunchedVm) {
         }
     }
     // Kill the helper child we spawned — never `pkill -f` (pattern can match unrelated PIDs).
-    let _ = vm.child.kill();
+    if let Err(e) = vm.child.kill() {
+        // ESRCH / Already exited is fine.
+        let _ = e;
+    }
     let _ = vm.child.wait();
 
     let helper = resolve_helper_path();
@@ -210,17 +300,23 @@ pub fn teardown_vm(vm: &mut LaunchedVm) {
         .arg("--jail-id")
         .arg(&vm.jail_id)
         .status();
-    if let Ok(st) = status {
-        if !st.success() {
-            eprintln!("warning: helper cleanup exited {st}");
-        }
-    } else if let Err(e) = status {
-        eprintln!("warning: helper cleanup spawn failed: {e}");
+    match status {
+        Ok(st) if st.success() => {}
+        Ok(st) => errors.push(format!("helper cleanup exited {st}")),
+        Err(e) => errors.push(format!("helper cleanup spawn failed: {e}")),
     }
     if let Some(parent) = vm.jail_root.parent() {
         if parent.exists() {
-            let _ = std::fs::remove_dir_all(parent);
+            if let Err(e) = std::fs::remove_dir_all(parent) {
+                errors.push(format!("remove jail parent: {e}"));
+            }
         }
+    }
+    vm.cleaned = true;
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 
@@ -243,5 +339,3 @@ fn resolve_helper_path() -> PathBuf {
     }
     installed
 }
-
-

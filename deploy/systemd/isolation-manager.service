@@ -3,16 +3,21 @@
 # Guests are ephemeral. This unit keeps the manager process/socket available.
 # Idle state: no Firecracker process.
 #
+# DO NOT enable until Serve-closed is an explicit Landen gate.
+# Dry-check: systemd-analyze verify deploy/systemd/isolation-manager.service
+#
 # Install (Landen):
 #   sudo install -o root -g root -m 0644 deploy/systemd/isolation-manager.service \
 #     /etc/systemd/system/isolation-manager.service
-#   # OR user unit:
-#   mkdir -p ~/.config/systemd/user
-#   cp deploy/systemd/isolation-manager.service ~/.config/systemd/user/
-#   systemctl --user daemon-reload
-#   systemctl --user enable --now isolation-manager
+#   sudo mkdir -p /etc/systemd/system/isolation-manager.service.d
+#   sudo install -o root -g root -m 0644 \
+#     deploy/systemd/isolation-manager.service.d/continuity.conf.example \
+#     /etc/systemd/system/isolation-manager.service.d/continuity.conf
+#   # Edit continuity.conf: set REQUIRE_ANCESTOR and AEGIS_JAILER_SHA256.
+#   sudo systemctl daemon-reload
+#   # start without enable for sandbox prove; enable only on Landen GO.
 #
-# Health is not is-active alone — run scripts/guest-gone-probe.sh after a prove job.
+# Authz: uid-only socket (0600). Not peercred. Full sudo ALL may still exist on host.
 
 [Unit]
 Description=Aegis Isolation Manager (spine-1)
@@ -27,17 +32,17 @@ WorkingDirectory=/home/landen/isolation-layer
 Environment=AEGIS_DECISION_CHAIN=/home/landen/.local/state/aegis/decision-chain.jsonl
 Environment=AEGIS_REJECT_LOG=/home/landen/.local/state/aegis/vestibule-reject.jsonl
 Environment=RUST_LOG=info
-# Long-lived UDS serve → prove → sudo -n /usr/local/bin/jailer-launch.
-# NoNewPrivileges must stay off: sudo/setuid is required for the jailer helper.
-# Do not enable until dest-read prove-via-socket is green (unit ships disabled).
+# Continuity pins live in drop-in continuity.conf (REQUIRED). Do not enable without them.
 ExecStartPre=/usr/bin/test -x /home/landen/isolation-layer/target/release/isolation-manager
+ExecStartPre=/usr/bin/test -f /etc/systemd/system/isolation-manager.service.d/continuity.conf
+ExecStartPre=/bin/sh -c 'test -n "$REQUIRE_ANCESTOR"'
 ExecStart=/home/landen/isolation-layer/target/release/isolation-manager serve --socket /home/landen/.local/state/aegis/isolation-manager.sock
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer
+ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer /home/landen/isolation-layer/target/release /run/user/1000
 PrivateTmp=true
 
 [Install]

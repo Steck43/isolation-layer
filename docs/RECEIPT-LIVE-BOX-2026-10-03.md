@@ -3,49 +3,66 @@
 Charter: `Agent/Security/corpus-capture/specs/2026-10-03-four-plane-spine-design.md`
 Day: 2026-10-03
 Seat: cursor
-Substrate: SUBSTRATE_GREEN (`RECEIPT-SUBSTRATE-2026-10-03.md`)
-Host: aegisbox (not WSL)
+Claim grade: **Box-closed** (not Serve-closed; not four_plane_complete; not atoms enforce)
 
-## Dest-read prove (Landen paste)
+## Provenance
 
-Command:
+| Item | Value |
+|---|---|
+| Host | `aegisbox` (`/dev/kvm` ok, `/dev/vhost-vsock` ok) |
+| Topic branch (Windows) | `spine1/live-box` (working tree includes post-interrogate harden; commit pending Landen) |
+| Atoms topic (host) | `spine1/atoms-suite` @ `3528f38b40fd71b1c05f214da00fd558a3b484da` |
+| Private sync | tar Windows → aegisbox working tree (no public push). Box `git HEAD` may lag; file sha256 of load-bearing paths is the sync gate. |
+| `isolation-manager` release sha256 | `7987ac1c9569849483baeaa616cb2bb8d3a6ab531921ea41085819ee7a74bc47` |
+| `jailer-launch` built sha256 | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` |
+| `jailer-launch` installed `/usr/local/bin` | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` (Landen `sudo install` dest-read; built == installed) |
+| Prove helper pin | scripts set `AEGIS_JAILER_SHA256` from installed path |
+| sudo | `(root) NOPASSWD: /usr/local/bin/jailer-launch` is present. Host also has `(ALL : ALL) ALL`. Not scoped-only. |
+| systemd | not-found / inactive. Unit refuses start without `REQUIRE_ANCESTOR`. |
+| `isolation-manager serve` | not running |
+| Chain covers | main jail only (`inspector_chain=out_of_band`) |
 
-```bash
-sudo install -o root -g root -m 0755 ~/isolation-layer/target/release/jailer-launch /usr/local/bin/jailer-launch
-bash ~/isolation-layer/scripts/run-spine1-prove.sh
-```
+## Live prove after harden (dest-read)
 
-Inner ATTACK:
-
-```bash
-cargo run --release -q -p isolation-manager -- prove --session-id spine1 --tool-call-id w1prove
-```
+`bash scripts/guest-gone-probe.sh --session-id spine1-harden --tool-call-id post-interrogate`
 
 | Check | Result |
 |---|---|
-| prove exit | **0** |
+| prove / guest-gone EXIT | **0** |
 | `decision_chain_verify` | PASS |
-| `decision_chain_tip` | `243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c` |
-| chain path | `/home/landen/.local/state/aegis/decision-chain.jsonl` |
-| chain grew | 7 rows (includes prior fail_closed allowlist miss, then launch/teardown/host_untouched/prove) |
-| join keys | `session_id=spine1` `tool_call_id=w1prove` `jail_id=mgr-1791067906101290579-100361` |
-| `no_firecracker` | yes |
-| `host_vmm_hygiene` / `host_untouched` | PASS |
-| vsock / vestibule / dropbox / inspector | true |
-| `spot_check_kvm_absent` | true |
-| `time_to_userspace_ms` | 1301.2 |
-| `time_to_workload_ms` | 35245.5 |
-| golden_rootfs_sha256 | `fbb60ef49358c5f5fb975985ab373dee734f23c868ddd867e1218e5044bbf70a` |
-| `/opt/aegis/isolation-layer` | symlink to `/home/landen/isolation-layer` |
-| helper reinstall | Landen `sudo install` of rebuilt jailer-launch |
+| `decision_chain_anchor` | PASS |
+| early `jail_id=` | printed before launch |
+| `jailer_launch_sha256_match` | PASS (installed pin) |
+| **FINAL_TIP** | `b036fb0fa5ddb09041e3cbc48f0dd2adc01f78df3f1ca83326137de0aa253f0c` |
+| prior tips still in chain | `e5eb0a65…`, `243b8f1f…` |
+| no firecracker / no jailer after | yes |
+| host_vmm_hygiene / host_untouched | PASS |
+
+## Negatives
+
+| Case | Exit | Honest name |
+|---|---|---|
+| `/proc/nope` | 1 | missing/empty chain + anchor (proxy) |
+| corrupt chain | 1 | tip read fail before launch |
+| empty + require-ancestor | 1 | anchor absent |
+| **RO chain with tip** (`scripts/neg-chain-unwritable.sh`) | 1 | `decision_chain_append_fail: Permission denied`; tip unchanged; no FC |
+
+## Host gates
+
+- atoms suite: CAUGHT-NAIVE=8 / FALSE-ALLOW=7 (8/16 = 8 catches of 16 cases). Suite harness applies B1 flow BLOCK in-process. Partner enforce **off**.
+- career speak + dispatch isolation; `firecracker_started=false`
+
+## Harden inventory (shipped this pass)
+
+flock + in-process append gate; atomic line write + fsync; v2 digests (v1 verify still); SpawnGuard/Drop cleanup; early `jail_id=`; fail-closed append on preflight; UNCHECKED refused; serve requires ancestor; `AEGIS_JAILER_SHA256`; teardown status in chain; RO negative script; parity script; verify-fail runbook; frontier check map.
 
 ## Residual
 
-- Nested Hyper-V TCB. Cold boot ~1.3 s userspace, not 125 ms.
-- systemd `serve` unit not enabled this sitting. Prove was CLI oneshot. Guest gone after prove.
-- `four_plane_complete` still false (judge stub, atoms enforce off).
-- Career Python lab still does not start Firecracker.
-
+- Chain tip-anchored / self-consistent, not attested.
+- Nested Hyper-V TCB.
+- Seven FALSE-ALLOWs open.
+- Inspector out of band.
+- Serve-closed open. systemd off.
 ## Verdict
 
-**LIVE_BOX_GREEN.** SPEAK unlock granted. Join keys dest-read. Audit tip is the chain tip above.
+**BOX_CLOSED_GREEN** tip `b036fb0f…` after harden + guest-gone. Helper built == installed `2197439f…`.

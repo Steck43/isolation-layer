@@ -3,8 +3,18 @@
 # Always checks residue for THIS run, even when prove fails.
 set -uo pipefail
 
+export PATH="$HOME/.cargo/bin:$PATH"
+cd "${HOME}/isolation-layer"
+
 CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
-ANCHOR="${REQUIRE_ANCESTOR:-243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c}"
+export AEGIS_DECISION_CHAIN="$CHAIN"
+ANCHOR="${REQUIRE_ANCESTOR:-b036fb0fa5ddb09041e3cbc48f0dd2adc01f78df3f1ca83326137de0aa253f0c}"
+export REQUIRE_ANCESTOR="$ANCHOR"
+HELPER_BIN="${JAILER_LAUNCH_BIN:-/usr/local/bin/jailer-launch}"
+if [[ -z "${AEGIS_JAILER_SHA256:-}" && -x "$HELPER_BIN" ]]; then
+  export AEGIS_JAILER_SHA256="$(sha256sum "$HELPER_BIN" | awk '{print $1}')"
+fi
+
 BEFORE_LEN=0
 if [[ -f "$CHAIN" ]]; then
   BEFORE_LEN=$(wc -l < "$CHAIN" | tr -d ' ')

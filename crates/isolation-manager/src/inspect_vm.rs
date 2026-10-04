@@ -46,7 +46,9 @@ pub fn run_disposable_inspect(staged: &StagedBlob) -> Result<InspectVmReport, St
             aegis_common::firecracker::utf8_tail(&ser, 1200)
         );
     }
-    teardown_vm(&mut vm);
+    if let Err(e) = teardown_vm(&mut vm) {
+        eprintln!("inspector_teardown=FAIL: {e}");
+    }
     thread::sleep(Duration::from_secs(1));
     result
 }

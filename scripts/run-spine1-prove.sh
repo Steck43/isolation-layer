@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Live prove on the box host. Continuity tip defaults to the last dest-read receipt tip.
+# Live prove on the box host. Continuity tip defaults to the last dest-read tip.
 set -uo pipefail
 export PATH="$HOME/.cargo/bin:$PATH"
 export AEGIS_DECISION_CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
-ANCHOR="${REQUIRE_ANCESTOR:-243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c}"
+# Continuity pin: prior FINAL_TIP from Box-closed guest-gone (advance with SPEAK/receipt).
+ANCHOR="${REQUIRE_ANCESTOR:-b036fb0fa5ddb09041e3cbc48f0dd2adc01f78df3f1ca83326137de0aa253f0c}"
+export REQUIRE_ANCESTOR="$ANCHOR"
+HELPER_BIN="${JAILER_LAUNCH_BIN:-/usr/local/bin/jailer-launch}"
+if [[ -z "${AEGIS_JAILER_SHA256:-}" && -x "$HELPER_BIN" ]]; then
+  export AEGIS_JAILER_SHA256="$(sha256sum "$HELPER_BIN" | awk '{print $1}')"
+fi
 mkdir -p "$(dirname "$AEGIS_DECISION_CHAIN")"
 cd "$HOME/isolation-layer"
 
@@ -29,7 +35,7 @@ if pgrep -af '[j]ailer' >/dev/null 2>&1; then
   residue_fail=1
 fi
 
-# Only fail on jail dirs named in this prove output (not historic July leftovers).
+# Prefer early jail_id= line (printed before launch). Also accept cleanup/insp lines.
 while read -r jid; do
   [[ -z "$jid" ]] && continue
   d="/opt/aegis/isolation-layer/jailer/firecracker/$jid"
@@ -53,5 +59,5 @@ echo "no_firecracker=yes"
 echo "no_jailer=yes"
 wc -l "$AEGIS_DECISION_CHAIN" || true
 tail -5 "$AEGIS_DECISION_CHAIN" || true
-grep -E 'decision_chain_|host_vmm|prove' /tmp/prove-spine1.out || true
+grep -E 'decision_chain_|host_vmm|prove|jail_id=|jailer_launch_sha256' /tmp/prove-spine1.out || true
 exit "$EC"

@@ -60,10 +60,10 @@ pub struct ProveArgs {
     #[arg(long)]
     pub tool_call_id: Option<String>,
     /// Require this row sha256 already in the host decision chain (continuity).
-    #[arg(long)]
+    #[arg(long, conflicts_with = "allow_genesis")]
     pub require_ancestor: Option<String>,
-    /// Allow an empty chain (no prior tip). Mutually exclusive with a missing ancestor.
-    #[arg(long, default_value_t = false)]
+    /// Allow an empty chain (no prior tip). Refused when the chain already has rows.
+    #[arg(long, default_value_t = false, conflicts_with = "require_ancestor")]
     pub allow_genesis: bool,
 }
 

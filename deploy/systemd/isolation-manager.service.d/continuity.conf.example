@@ -1,0 +1,7 @@
+# Copy to /etc/systemd/system/isolation-manager.service.d/continuity.conf (root-owned 0644).
+# Fill live values before systemctl start/enable. Do not leave placeholders.
+# ALLOW_GENESIS must stay unset.
+
+[Service]
+Environment=REQUIRE_ANCESTOR=REPLACE_WITH_LIVE_TIP_SHA256
+Environment=AEGIS_JAILER_SHA256=REPLACE_WITH_INSTALLED_JAILER_LAUNCH_SHA256
