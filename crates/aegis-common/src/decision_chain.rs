@@ -117,14 +117,31 @@ pub fn row_digest(
     )
 }
 
-fn row_digest_v2(
+fn canon_ts_string(ts: f64) -> String {
+    format!("{ts:.6}")
+}
+
+/// Timestamp strings to try when verifying. JSON f64 round-trip can change the
+/// last unit in the sixth decimal place versus the value hashed at append time.
+fn canon_ts_candidates(ts: f64) -> Vec<String> {
+    let mut out = vec![canon_ts_string(ts)];
+    let micros = (ts * 1_000_000.0).round() as i64;
+    for m in [micros - 1, micros, micros + 1] {
+        out.push(format!("{:.6}", (m as f64) / 1_000_000.0));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn row_digest_v2_ts(
     jail_id: &str,
     session_id: Option<&str>,
     tool_call_id: Option<&str>,
     layer: &str,
     verdict: ChainVerdict,
     reason: &str,
-    ts: f64,
+    ts_canon: &str,
     prev: &str,
 ) -> String {
     let mut hasher = Sha256::new();
@@ -135,13 +152,35 @@ fn row_digest_v2(
     digest_put(&mut hasher, layer.as_bytes());
     digest_put(&mut hasher, verdict.as_str().as_bytes());
     digest_put(&mut hasher, reason.as_bytes());
-    digest_put(&mut hasher, format!("{ts:.6}").as_bytes());
+    digest_put(&mut hasher, ts_canon.as_bytes());
     digest_put(&mut hasher, prev.as_bytes());
     hasher
         .finalize()
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+fn row_digest_v2(
+    jail_id: &str,
+    session_id: Option<&str>,
+    tool_call_id: Option<&str>,
+    layer: &str,
+    verdict: ChainVerdict,
+    reason: &str,
+    ts: f64,
+    prev: &str,
+) -> String {
+    row_digest_v2_ts(
+        jail_id,
+        session_id,
+        tool_call_id,
+        layer,
+        verdict,
+        reason,
+        &canon_ts_string(ts),
+        prev,
+    )
 }
 
 /// Legacy v1 digest (pipe-joined). Kept only so existing chains verify.
@@ -179,30 +218,36 @@ pub fn row_digest_v1(
 }
 
 fn row_digest_matches(row: &ChainRow) -> bool {
-    let v2 = row_digest_v2(
-        &row.jail_id,
-        row.session_id.as_deref(),
-        row.tool_call_id.as_deref(),
-        &row.layer,
-        row.verdict,
-        &row.reason,
-        row.ts,
-        &row.prev,
-    );
-    if v2 == row.sha256 {
-        return true;
+    for ts_canon in canon_ts_candidates(row.ts) {
+        let v2 = row_digest_v2_ts(
+            &row.jail_id,
+            row.session_id.as_deref(),
+            row.tool_call_id.as_deref(),
+            &row.layer,
+            row.verdict,
+            &row.reason,
+            &ts_canon,
+            &row.prev,
+        );
+        if v2 == row.sha256 {
+            return true;
+        }
+        let v1 = row_digest_v1(
+            &row.jail_id,
+            row.session_id.as_deref(),
+            row.tool_call_id.as_deref(),
+            &row.layer,
+            row.verdict,
+            &row.reason,
+            // v1 also used six-decimal formatting at write time
+            ts_canon.parse().unwrap_or(row.ts),
+            &row.prev,
+        );
+        if v1 == row.sha256 {
+            return true;
+        }
     }
-    let v1 = row_digest_v1(
-        &row.jail_id,
-        row.session_id.as_deref(),
-        row.tool_call_id.as_deref(),
-        &row.layer,
-        row.verdict,
-        &row.reason,
-        row.ts,
-        &row.prev,
-    );
-    v1 == row.sha256
+    false
 }
 
 /// Append-only decision chain store.
@@ -307,16 +352,18 @@ impl DecisionChain {
                 .map(|r| r.sha256.clone())
                 .unwrap_or_else(|| "0".repeat(64))
         };
-        let ts = now_ts();
+        // Canonize before hash+store so JSON f64 round-trip still verifies.
+        let ts_canon = canon_ts_string(now_ts());
+        let ts: f64 = ts_canon.parse().unwrap_or_else(|_| now_ts());
         let layer = "box";
-        let sha256 = row_digest_v2(
+        let sha256 = row_digest_v2_ts(
             jail_id,
             session_id,
             tool_call_id,
             layer,
             verdict,
             reason,
-            ts,
+            &ts_canon,
             &prev,
         );
         let row = ChainRow {

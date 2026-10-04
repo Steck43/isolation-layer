@@ -1,66 +1,58 @@
 # RECEIPT — Serve-closed (2026-10-03)
 
-Status: TRANSPORT GREEN · SYSTEMD LANDEN_GATE (interactive sudo required for unit install / enable).
-
-Tip-of-record ≠ attestation. Socket authz = uid-only (mode 0600), not SO_PEERCRED.
+Status: Serve-closed measured. Tip-of-record ≠ attestation. Socket authz = uid-only (mode 0600), not SO_PEERCRED.
 
 ## Identity freeze
 
 | Field | Value |
 |---|---|
-| MERGED_HEAD (freeze) | `eadf002b402201a2af7786dfba2671056caeffb4` |
-| SERVE_FIX_HEAD (umask) | `472a55948280aee73ffdf8bd4b8e3c0c751240ba` |
-| isolation-manager SHA256 (box, post-umask) | `a0ee02aff68eb9aa87cbeb71037377414791b456e0e42c5390b9e17da33a304e` |
+| MERGED_HEAD (topic tip at freeze) | `eadf002b402201a2af7786dfba2671056caeffb4` |
+| SERVE_FIX / chain-ts tip (host) | commit after umask + ts-candidate verify (this receipt sitting) |
+| isolation-manager SHA256 (box release) | `813ca6dbf95b67a4fc2619c5441a6e95559e11060441f293e61d810578335296` |
 | jailer-launch built SHA256 | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` |
 | jailer-launch installed SHA256 | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` |
-| PIN at T4 serve start | `1b8747514850c3a421f8332064b1f1c834763e2d6ed75ab75debe99953b8ebd6` |
-| FINAL_TIP after T4 UDS all | `b71e3694a59fad751e18f422a295d6f288a060b2422d0a137be24a9eaa3b8dfa` |
+| PIN in continuity.conf (REQUIRE_ANCESTOR) | `fd4efcfe351b266843f39e46fcf3d2dc04d20da8ce1b8d52910cf08b2e1410b5` |
+| FINAL_TIP after post-boot socket prove | `d13ecee88b969cd3899403859e8e982188bb6f5d6c88eb6a25ec270590ec115a` |
 | Box-closed lineage tip (historical) | `b036fb0fa5ddb09041e3cbc48f0dd2adc01f78df3f1ca83326137de0aa253f0c` |
 
 ## Kill-list
 
 | # | Item | Result |
 |---|---|---|
-| 1 | Anchor pin (REQUIRE_ANCESTOR) | PASS (refuse missing / mutex exclusive) |
-| 2 | False liveness (bad JSON / unknown) | PASS tip unchanged |
-| 3 | Tip growth on valid prove | PASS `ok:true` + tip advance |
-| 4 | Starvation (dual client) | PASS `DUAL_SECOND_OK` |
-| 5 | Binary identity built==installed helper | PASS `2197439f…` |
-| 6 | Privilege overclaim | refused: sudo `(ALL:ALL) ALL` + NOPASSWD jailer only |
-| 7 | Inspector scope | OOB; not in Serve-closed |
-| 8 | No truncate heal | standing refuse |
-| 9 | Restart pin rotation | LANDEN_GATE (needs unit start) |
+| 1 | Anchor pin (REQUIRE_ANCESTOR) | PASS |
+| 2 | False liveness (bad JSON / unknown) | PASS |
+| 3 | Tip growth on valid prove | PASS |
+| 4 | Starvation (dual client) | PASS |
+| 5 | Binary identity helper built==installed | PASS `2197439f…` |
+| 6 | Privilege overclaim | refused: `(ALL:ALL) ALL` + NOPASSWD jailer |
+| 7 | Inspector scope | OOB |
+| 8 | No truncate heal | held; row-78 fixed via ts-candidate verify (JSON f64 drift), not truncate |
+| 9 | Restart pin rotation | PASS (T5 SIGKILL → active → prove) |
 
-## Measured (agent, no interactive sudo)
-
-| Check | Result |
-|---|---|
-| T0 commit/push `spine1/live-box` | PASS → origin |
-| T1 source SHA match + `cargo test --workspace` + release build | PASS |
-| T2 refuse-config + `systemd-analyze verify` | PASS; unit `not-found` / disabled |
-| T3 guest-gone + `NEG_UNWRITABLE_REAL_OK` | PASS; PIN captured |
-| T4 foreground UDS 0600 + all prove modes | PASS `SERVE_UDS_ALL_OK`; residue empty |
-| Umask fix | PASS — sticky umask 077 was blocking landen `api.sock` visibility |
-
-## Systemd (Landen interactive sudo)
+## Systemd
 
 | Check | Result |
 |---|---|
-| unit installed | LANDEN_GATE — `sudo -n` denied; only `jailer-launch` is NOPASSWD |
-| drop-in continuity.conf | prepared `/tmp/serve-unit-ready/continuity.conf` + `scripts/landen-serve-closed-t5-t6.sh` |
-| start without enable | LANDEN_GATE |
-| enable + reboot | LANDEN_GATE — script prompts `ENABLE` |
-| post-boot active+enabled | LANDEN_GATE — `scripts/serve-closed-postboot.sh` |
+| unit installed | PASS |
+| drop-in continuity.conf | PASS (pins above) |
+| start without enable (T5) | PASS |
+| enable + reboot (T6) | PASS |
+| post-boot active+enabled | PASS |
+| post-boot socket prove | PASS `ok:true` tip `d13ecee8…` |
+| socket 0600 owner landen | PASS |
+| nobody denied | PASS (T5) |
+| residue firecracker | PASS empty |
 
-Operator:
+## Boot residual (named, not a reopen)
+
+Early boot flapped `NAMESPACE` status 226 while `ReadWritePaths` listed `/run/user/1000` before logind created it. Service reached `active` after retries once the session dir existed. Unit file on disk now drops `/run/user/1000` and waits on `network-online.target` + `systemd-user-sessions.service`. **Landen must reinstall the unit file** for the next reboot to pick that up:
 
 ```bash
-ssh landen@aegisbox
-bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh
-# after reboot:
-bash ~/isolation-layer/scripts/serve-closed-postboot.sh
+sudo install -o root -g root -m 0644 ~/isolation-layer/deploy/systemd/isolation-manager.service \
+  /etc/systemd/system/isolation-manager.service
+sudo systemctl daemon-reload
 ```
 
 ## Explicit non-claims
 
-four_plane_complete · atoms enforce · chain attestation · inspector in-chain · scoped-only sudo · peercred / grant · FALSE-ALLOW closers · bare-metal TCB equivalence · Serve-closed systemd-on (until Landen finishes T5/T6).
+four_plane_complete · atoms enforce · chain attestation · inspector in-chain · scoped-only sudo · peercred / grant · FALSE-ALLOW closers · bare-metal TCB equivalence.

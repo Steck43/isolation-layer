@@ -30,10 +30,15 @@ EOF
 sudo install -o root -g root -m 0644 /tmp/continuity.conf \
   /etc/systemd/system/isolation-manager.service.d/continuity.conf
 sudo systemctl daemon-reload
-systemctl is-enabled isolation-manager.service
+# is-enabled exits 1 when disabled — do not trip set -e
+en=$(systemctl is-enabled isolation-manager.service 2>&1 || true)
+echo SYS_EN=$en
+test "$en" = "disabled"
 sudo systemctl start isolation-manager.service
 sleep 1
-systemctl is-active isolation-manager.service
+act=$(systemctl is-active isolation-manager.service 2>&1 || true)
+echo SYS_ACT=$act
+test "$act" = "active"
 stat -c 'SOCK_MODE=%a SOCK_UID=%U' "$SOCK"
 test "$(stat -c '%a' "$SOCK")" = "600"
 export SOCK AEGIS_DECISION_CHAIN="$CHAIN"
@@ -50,7 +55,9 @@ PY
 pid=$(systemctl show -p MainPID --value isolation-manager.service)
 sudo kill -9 "$pid"
 sleep 6
-systemctl is-active isolation-manager.service
+act2=$(systemctl is-active isolation-manager.service 2>&1 || true)
+echo SYS_ACT_AFTER_KILL=$act2
+test "$act2" = "active"
 # refresh pin in drop-in if tip grew
 PIN2=$(python3 -c 'import json; print(json.loads(open("'"$CHAIN"'").read().strip().splitlines()[-1])["sha256"])')
 cat > /tmp/continuity.conf <<EOF
@@ -71,6 +78,9 @@ echo "For T6 enable+reboot, run with SERVE_ENABLE=1:"
 echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh"
 if [[ "${SERVE_ENABLE:-}" == "1" ]]; then
   sudo systemctl enable isolation-manager.service
+  en2=$(systemctl is-enabled isolation-manager.service 2>&1 || true)
+  echo SYS_EN=$en2
+  test "$en2" = "enabled"
   echo "enabled; rebooting"
   sudo reboot
 fi

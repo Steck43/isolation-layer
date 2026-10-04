@@ -21,7 +21,8 @@
 
 [Unit]
 Description=Aegis Isolation Manager (spine-1)
-After=network.target
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
 Documentation=file:///home/landen/isolation-layer/docs/PLAN-live-box.md
 
 [Service]
@@ -42,7 +43,9 @@ RestartSec=5
 NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer /home/landen/isolation-layer/target/release /run/user/1000
+# Do not list /run/user/1000: it is absent until logind creates the session and
+# breaks early boot with NAMESPACE (status 226) when the unit is enabled.
+ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer /home/landen/isolation-layer/target/release
 PrivateTmp=true
 
 [Install]
