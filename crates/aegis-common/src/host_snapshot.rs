@@ -130,9 +130,7 @@ fn pgrep(name: &str) -> Result<Vec<u32>, SnapshotError> {
         return Ok(Vec::new());
     }
     let s = String::from_utf8_lossy(&out.stdout);
-    Ok(s.lines()
-        .filter_map(|l| l.trim().parse().ok())
-        .collect())
+    Ok(s.lines().filter_map(|l| l.trim().parse().ok()).collect())
 }
 
 fn list_jailer_dirs() -> Result<Vec<PathBuf>, SnapshotError> {
@@ -156,7 +154,58 @@ fn mounts_under_jailer() -> Result<Vec<String>, SnapshotError> {
     let prefix = JAILER_BASE;
     Ok(mounts
         .lines()
-        .filter(|l| l.split_whitespace().nth(1).is_some_and(|m| m.starts_with(prefix)))
+        .filter(|l| {
+            l.split_whitespace()
+                .nth(1)
+                .is_some_and(|m| m.starts_with(prefix))
+        })
         .map(|l| l.to_string())
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn snap(kernel: &str, rootfs: &str) -> HostSnapshot {
+        HostSnapshot {
+            firecracker_pids: Vec::new(),
+            jailer_pids: Vec::new(),
+            jailer_instance_dirs: Vec::new(),
+            jailer_mounts: Vec::new(),
+            golden_kernel_sha256: kernel.into(),
+            golden_rootfs_sha256: rootfs.into(),
+        }
+    }
+
+    #[test]
+    fn assert_host_vmm_hygiene_accepts_unchanged() {
+        let before = snap("aa", "bb");
+        assert!(assert_host_vmm_hygiene(&before, &before).is_ok());
+    }
+
+    #[test]
+    fn assert_host_vmm_hygiene_rejects_golden_hash_change() {
+        let before = snap("aa", "bb");
+        let after_kernel = snap("cc", "bb");
+        let err = assert_host_vmm_hygiene(&before, &after_kernel).unwrap_err();
+        assert!(err.contains("golden kernel sha256 changed"), "{err}");
+        let after_rootfs = snap("aa", "dd");
+        let err = assert_host_vmm_hygiene(&before, &after_rootfs).unwrap_err();
+        assert!(err.contains("golden rootfs sha256 changed"), "{err}");
+    }
+
+    #[test]
+    fn assert_host_vmm_hygiene_rejects_stray_vmm() {
+        let before = snap("aa", "bb");
+        let mut after = before.clone();
+        after.firecracker_pids = vec![9];
+        after.jailer_pids = vec![8];
+        after.jailer_instance_dirs = vec![PathBuf::from("/tmp/jail-x")];
+        let err = assert_host_vmm_hygiene(&before, &after).unwrap_err();
+        assert!(err.contains("stray firecracker pids"), "{err}");
+        assert!(err.contains("stray jailer pids"), "{err}");
+        assert!(err.contains("leftover jailer dirs"), "{err}");
+    }
 }

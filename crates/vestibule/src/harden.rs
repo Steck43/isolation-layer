@@ -359,7 +359,10 @@ fn attach_via_user_systemd() -> io::Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(io::Error::new(
             io::ErrorKind::Other,
-            format!("busctl StartTransientUnit failed: {} {stderr}", output.status),
+            format!(
+                "busctl StartTransientUnit failed: {} {stderr}",
+                output.status
+            ),
         ))
     }
 }
@@ -674,54 +677,126 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    /// Report flags must come from the installers, not `false` literals.
+    /// A skip (early return) is not a pass.
+    fn assert_harden_src_wires_report_flags() {
+        let src = include_str!("harden.rs");
+        assert!(
+            src.contains("let cgroup_jail = enter_listener_cgroup().unwrap_or(false);"),
+            "cgroup_jail must be assigned from enter_listener_cgroup"
+        );
+        assert!(
+            src.contains("let landlock = install_landlock(fs_roots).unwrap_or(false);"),
+            "landlock must be assigned from install_landlock"
+        );
+    }
+
+    /// Fork, apply the real hardener, return (landlock, cgroup_jail).
+    fn apply_report_flags() -> (bool, bool) {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!("aegis-harden-report-{stamp}"));
+        let child_path = path.clone();
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            let code = match apply_listener_hardening_with_fs_roots(&[std::env::temp_dir()]) {
+                Ok(r) => {
+                    let body = format!("{} {}\n", r.landlock as u8, r.cgroup_jail as u8);
+                    match fs::write(&child_path, body) {
+                        Ok(()) => 0,
+                        Err(_) => 41,
+                    }
+                }
+                Err(_) => 42,
+            };
+            unsafe { libc::_exit(code) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        assert!(
+            libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+            "apply_listener_hardening_with_fs_roots failed status={status}"
+        );
+        let raw = fs::read_to_string(&path).expect("harden report file");
+        let _ = fs::remove_file(&path);
+        let mut bits = raw.split_whitespace();
+        let landlock = bits.next() == Some("1");
+        let cgroup_jail = bits.next() == Some("1");
+        (landlock, cgroup_jail)
+    }
+
     #[test]
     fn hardening_applies_as_unprivileged() {
+        assert_harden_src_wires_report_flags();
         let euid = unsafe { libc::geteuid() };
         assert!(euid != 0, "listener must not be root for this RECORD path");
         assert!(set_no_new_privs().unwrap());
         let _ = set_not_dumpable();
         assert!(set_rlimit_core_zero().unwrap());
+        let (landlock, cgroup_jail) = apply_report_flags();
+        assert!(
+            landlock,
+            "apply report landlock must be true (not a false literal)"
+        );
+        let _ = cgroup_jail;
     }
 
     #[test]
     fn cgroup_jail_attaches_under_user_service() {
-        // RECORD path on the box: user dbus + cgroup v2 delegation.
-        // Skip only when no user runtime (e.g. bare CI without systemd --user).
-        if std::env::var_os("XDG_RUNTIME_DIR").is_none() {
-            eprintln!("skip cgroup_jail: no XDG_RUNTIME_DIR");
-            return;
+        assert_harden_src_wires_report_flags();
+        // Skip is not a pass: always call the installer and the apply report.
+        let attached = enter_listener_cgroup();
+        let (landlock, cgroup_jail) = apply_report_flags();
+        assert!(landlock, "apply report landlock must be true");
+        match attached {
+            Ok(true) => {
+                assert!(
+                    cgroup_jail,
+                    "apply report cgroup_jail must be true when enter attached"
+                );
+                let rel = self_cgroup_rel().unwrap();
+                assert!(
+                    rel.contains("aegis-vestibule-"),
+                    "cgroup path missing aegis-vestibule-: {rel}"
+                );
+                assert!(
+                    rel.contains("user@"),
+                    "expected under user@*.service, got {rel}"
+                );
+                assert!(already_jailed());
+            }
+            Ok(false) => {
+                assert!(
+                    !cgroup_jail,
+                    "apply report cgroup_jail must follow enter_listener_cgroup"
+                );
+                panic!("cgroup jail did not attach (skip is not a pass)");
+            }
+            Err(e) => panic!("cgroup jail attach error (skip is not a pass): {e}"),
         }
-        assert!(
-            enter_listener_cgroup().expect("cgroup jail must attach"),
-            "expected aegis-vestibule-* leaf with memory/pids limits"
-        );
-        let rel = self_cgroup_rel().unwrap();
-        assert!(
-            rel.contains("aegis-vestibule-"),
-            "cgroup path missing aegis-vestibule-: {rel}"
-        );
-        assert!(
-            rel.contains("user@"),
-            "expected under user@*.service, got {rel}"
-        );
-        assert!(already_jailed());
     }
 
     #[test]
     fn landlock_allows_tmp_denies_etc() {
+        assert_harden_src_wires_report_flags();
         let pid = unsafe { libc::fork() };
         assert!(pid >= 0, "fork failed");
         if pid == 0 {
-            assert!(set_no_new_privs().unwrap());
             let roots = vec![std::env::temp_dir()];
-            assert!(install_landlock(&roots).expect("landlock"));
-            let tmp_ok = fs::write(
-                std::env::temp_dir().join("aegis-ll-probe"),
-                b"ok",
-            )
-            .is_ok();
+            let report = match apply_listener_hardening_with_fs_roots(&roots) {
+                Ok(r) => r,
+                Err(_) => unsafe { libc::_exit(41) },
+            };
+            if !report.landlock {
+                unsafe { libc::_exit(42) };
+            }
+            let tmp_ok = fs::write(std::env::temp_dir().join("aegis-ll-probe"), b"ok").is_ok();
             let etc_denied = fs::read_to_string("/etc/passwd").is_err();
-            let code = if tmp_ok && etc_denied { 0 } else { 42 };
+            let code = if tmp_ok && etc_denied { 0 } else { 43 };
             unsafe { libc::_exit(code) };
         }
         let mut status: i32 = 0;
@@ -751,7 +826,11 @@ mod tests {
         assert_eq!(w, pid);
         let signaled = libc::WIFSIGNALED(status);
         let exited = libc::WIFEXITED(status);
-        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = if exited {
+            libc::WEXITSTATUS(status)
+        } else {
+            -1
+        };
         assert!(
             signaled || (exited && exit_code != 42),
             "expected allowlist to block /bin/true; status={status} signaled={signaled} exit={exit_code}"
@@ -773,7 +852,11 @@ mod tests {
         assert_eq!(w, pid);
         let signaled = libc::WIFSIGNALED(status);
         let exited = libc::WIFEXITED(status);
-        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = if exited {
+            libc::WEXITSTATUS(status)
+        } else {
+            -1
+        };
         assert!(
             signaled || (exited && exit_code != 42),
             "expected allowlist to block ptrace; status={status} signaled={signaled} exit={exit_code}"
@@ -805,7 +888,11 @@ mod tests {
         assert_eq!(w, pid);
         let signaled = libc::WIFSIGNALED(status);
         let exited = libc::WIFEXITED(status);
-        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = if exited {
+            libc::WEXITSTATUS(status)
+        } else {
+            -1
+        };
         assert!(
             signaled || (exited && exit_code != 42),
             "expected allowlist to block mount; status={status} signaled={signaled} exit={exit_code}"
@@ -871,7 +958,11 @@ mod tests {
         assert_eq!(w, pid);
         let signaled = libc::WIFSIGNALED(status);
         let exited = libc::WIFEXITED(status);
-        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = if exited {
+            libc::WEXITSTATUS(status)
+        } else {
+            -1
+        };
         assert!(
             signaled || (exited && exit_code != 42),
             "expected mprotect(PROT_EXEC) blocked; status={status} signaled={signaled} exit={exit_code}"
@@ -901,7 +992,11 @@ mod tests {
         assert_eq!(w, pid);
         let signaled = libc::WIFSIGNALED(status);
         let exited = libc::WIFEXITED(status);
-        let exit_code = if exited { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = if exited {
+            libc::WEXITSTATUS(status)
+        } else {
+            -1
+        };
         assert!(
             signaled || (exited && exit_code != 42),
             "expected mmap(PROT_EXEC) blocked; status={status} signaled={signaled} exit={exit_code}"

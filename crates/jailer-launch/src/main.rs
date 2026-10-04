@@ -11,7 +11,10 @@ use aegis_common::validate::{assert_cgroup_version, LaunchRequest, ValidationErr
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(name = "jailer-launch", about = "Launch a validated Firecracker jailer instance")]
+#[command(
+    name = "jailer-launch",
+    about = "Launch a validated Firecracker jailer instance"
+)]
 #[command(disable_help_subcommand = true)]
 #[command(disable_version_flag = true)]
 pub struct Cli {
@@ -76,16 +79,8 @@ fn run() -> Result<(), i32> {
     let rootfs = cli.rootfs.as_ref().expect("rootfs required");
     let uid = cli.uid.expect("uid required");
     let gid = cli.gid.expect("gid required");
-    let req = LaunchRequest::validate(
-        &cli.jail_id,
-        kernel,
-        rootfs,
-        uid,
-        gid,
-        sudo_uid,
-        sudo_gid,
-    )
-    .map_err(|e: ValidationError| {
+    let req = LaunchRequest::validate(&cli.jail_id, kernel, rootfs, uid, gid, sudo_uid, sudo_gid)
+        .map_err(|e: ValidationError| {
         eprintln!("validation error: {e}");
         3
     })?;
@@ -110,8 +105,26 @@ fn run() -> Result<(), i32> {
     Err(5)
 }
 
+fn jailer_base_dir() -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Ok(p) = env::var("AEGIS_TEST_JAILER_BASE") {
+            if !p.is_empty() {
+                return PathBuf::from(p);
+            }
+        }
+    }
+    PathBuf::from(aegis_common::paths::JAILER_BASE)
+}
+
+fn cleanup_path_is_inside_jail(
+    canonical: &std::path::Path,
+    canonical_base: &std::path::Path,
+) -> bool {
+    canonical.starts_with(canonical_base.join("firecracker"))
+}
+
 fn cleanup_jail(jail_id: &str) -> Result<(), i32> {
-    use aegis_common::paths::JAILER_BASE;
     use aegis_common::validate::validate_jail_id;
     use std::fs;
     use std::path::PathBuf;
@@ -128,13 +141,14 @@ fn cleanup_jail(jail_id: &str) -> Result<(), i32> {
         3
     })?;
 
-    let instance = PathBuf::from(JAILER_BASE).join("firecracker").join(jail_id);
-    let canonical_base = PathBuf::from(JAILER_BASE)
-        .canonicalize()
-        .map_err(|e| {
-            eprintln!("cleanup failed: canonicalize jailer base: {e}");
-            4
-        })?;
+    let jailer_base = jailer_base_dir();
+    let instance = PathBuf::from(&jailer_base)
+        .join("firecracker")
+        .join(jail_id);
+    let canonical_base = PathBuf::from(&jailer_base).canonicalize().map_err(|e| {
+        eprintln!("cleanup failed: canonicalize jailer base: {e}");
+        4
+    })?;
     if !instance.exists() {
         println!("cleanup=absent jail_id={jail_id}");
         return Ok(());
@@ -143,8 +157,11 @@ fn cleanup_jail(jail_id: &str) -> Result<(), i32> {
         eprintln!("cleanup failed: canonicalize instance: {e}");
         4
     })?;
-    if !canonical.starts_with(&canonical_base.join("firecracker")) {
-        eprintln!("cleanup failed: refusing path outside jailer base: {}", canonical.display());
+    if !cleanup_path_is_inside_jail(&canonical, &canonical_base) {
+        eprintln!(
+            "cleanup failed: refusing path outside jailer base: {}",
+            canonical.display()
+        );
         return Err(3);
     }
     fs::remove_dir_all(&canonical).map_err(|e| {
@@ -187,8 +204,12 @@ mod tests {
     fn jailer_argv_is_fixed_no_caller_controlled_exec() {
         let req = LaunchRequest {
             jail_id: "mgr-test99".into(),
-            kernel_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176"),
-            rootfs_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4"),
+            kernel_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176",
+            ),
+            rootfs_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4",
+            ),
             uid: 1000,
             gid: 1000,
         };
@@ -204,7 +225,9 @@ mod tests {
     fn ssh_hop_argv_adds_no_network_and_does_not_claim_always_invoked() {
         let req = LaunchRequest {
             jail_id: "mgr-hop000001".into(),
-            kernel_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176"),
+            kernel_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176",
+            ),
             rootfs_path: PathBuf::from(
                 "/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4",
             ),
@@ -220,5 +243,38 @@ mod tests {
         assert!(!joined.contains("--netns"));
         assert!(!joined.contains("always_invoked"));
         assert!(!req.vm_config_json().contains("network"));
+    }
+
+    #[test]
+    fn cleanup_jail_refuses_path_outside_base() {
+        use std::fs;
+        use std::sync::Mutex;
+        static ENV_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("jailer-base");
+        let fc = base.join("firecracker");
+        fs::create_dir_all(&fc).unwrap();
+        let outside = tmp.path().join("outside-tree");
+        fs::create_dir_all(&outside).unwrap();
+        let marker = outside.join("keep-me");
+        fs::write(&marker, b"stay").unwrap();
+        std::os::unix::fs::symlink(&outside, fc.join("cleanup-out-1")).unwrap();
+
+        std::env::set_var("SUDO_UID", "1000");
+        std::env::set_var("SUDO_GID", "1000");
+        std::env::set_var("AEGIS_TEST_JAILER_BASE", base.as_os_str());
+
+        let err = super::cleanup_jail("cleanup-out-1").expect_err("must refuse escape");
+        assert_eq!(err, 3);
+        assert!(
+            marker.exists(),
+            "outside tree must survive a refused cleanup"
+        );
+
+        std::env::remove_var("AEGIS_TEST_JAILER_BASE");
+        std::env::remove_var("SUDO_UID");
+        std::env::remove_var("SUDO_GID");
     }
 }
