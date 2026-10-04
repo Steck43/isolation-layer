@@ -57,18 +57,23 @@ pub fn run(socket_path: PathBuf) -> i32 {
     }
     let _ = std::fs::remove_file(&socket_path);
 
-    let _umask_guard = {
-        let prev = unsafe { libc::umask(0o077) };
-        UmaskRestore(prev)
-    };
-
+    // Tighten umask only around bind so the socket starts 0600. Restore before
+    // any jailer/Firecracker child inherits this process — a sticky 077 umask
+    // made api.sock invisible to landen and timed out every serve prove.
+    let prev_umask = unsafe { libc::umask(0o077) };
     let listener = match UnixListener::bind(&socket_path) {
         Ok(l) => l,
         Err(e) => {
+            unsafe {
+                libc::umask(prev_umask);
+            }
             eprintln!("serve bind failed: {e}");
             return 1;
         }
     };
+    unsafe {
+        libc::umask(prev_umask);
+    }
     {
         use std::os::unix::fs::PermissionsExt;
         if let Err(e) =
@@ -83,6 +88,8 @@ pub fn run(socket_path: PathBuf) -> i32 {
         "isolation-manager serve listening {} (uid-only socket)",
         socket_path.display()
     );
+    // Thread-per-connection so a slow client cannot starve accept. Prove is
+    // heavyweight; launch path serializes via APPEND_GATE + flock.
     for conn in listener.incoming() {
         let stream = match conn {
             Ok(s) => s,
@@ -169,11 +176,3 @@ fn read_line_bounded(stream: &mut UnixStream, max: usize) -> Result<String, Stri
     String::from_utf8(buf).map_err(|e| format!("utf8:{e}"))
 }
 
-struct UmaskRestore(libc::mode_t);
-impl Drop for UmaskRestore {
-    fn drop(&mut self) {
-        unsafe {
-            libc::umask(self.0);
-        }
-    }
-}
