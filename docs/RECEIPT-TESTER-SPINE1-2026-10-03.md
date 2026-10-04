@@ -34,11 +34,11 @@ Until `RECEIPT-LIVE-BOX` prove exit 0, these case labels stay HOLD (inventory):
 
 ## Judge residual
 
-STUB / `applied: false` — remainder register.
+STUB / `applied: false`. Remainder register.
 
 ## Tip-attest note (W2.7)
 
-Eng atoms B1 closer is on Windows `spine1/atoms-suite`. Do **not** silently copy onto live Aegis. Tester copy deploy after tip-attest of eng SHA — pending Landen GO to rsync eng → tester plugins (version match G-02). This receipt freezes strip posture without that copy.
+Eng atoms B1 closer is on Windows `spine1/atoms-suite`. Do **not** silently copy onto live Aegis. Tester copy deploy after tip-attest of eng SHA, pending Landen GO to rsync eng → tester plugins (version match G-02). This receipt freezes strip posture without that copy.
 
 ## Verdict
 
