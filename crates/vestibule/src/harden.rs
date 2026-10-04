@@ -734,6 +734,49 @@ mod tests {
         (landlock, cgroup_jail)
     }
 
+    /// Call `enter_listener_cgroup` with `XDG_RUNTIME_DIR` unset in a child.
+    /// `Ok(false)` here is a reported success that did not attach.
+    fn enter_cgroup_with_runtime_dir_unset() -> io::Result<bool> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!("aegis-cgroup-xdg-{stamp}"));
+        let child_path = path.clone();
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+            let body = match enter_listener_cgroup() {
+                Ok(true) => "ok-true\n",
+                Ok(false) => "ok-false\n",
+                Err(_) => "err\n",
+            };
+            let code = match fs::write(&child_path, body) {
+                Ok(()) => 0,
+                Err(_) => 41,
+            };
+            unsafe { libc::_exit(code) };
+        }
+        let mut status: i32 = 0;
+        let w = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(w, pid);
+        assert!(
+            libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+            "enter_listener_cgroup with XDG_RUNTIME_DIR unset failed status={status}"
+        );
+        let raw = fs::read_to_string(&path).expect("cgroup xdg report file");
+        let _ = fs::remove_file(&path);
+        match raw.trim() {
+            "ok-true" => Ok(true),
+            "ok-false" => Ok(false),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "enter_listener_cgroup did not attach",
+            )),
+        }
+    }
+
     #[test]
     fn hardening_applies_as_unprivileged() {
         assert_harden_src_wires_report_flags();
@@ -753,7 +796,14 @@ mod tests {
     #[test]
     fn cgroup_jail_attaches_under_user_service() {
         assert_harden_src_wires_report_flags();
-        // Skip is not a pass: always call the installer and the apply report.
+        // Pin the skip: Ok(false) with the runtime directory unset is a
+        // reported success that did not attach, not a jail-off pass.
+        let skipped = enter_cgroup_with_runtime_dir_unset();
+        assert!(
+            !matches!(skipped, Ok(false)),
+            "enter_listener_cgroup Ok(false) with XDG_RUNTIME_DIR unset is a skip, not a pass: {skipped:?}"
+        );
+        // Real attach path: always call the installer and the apply report.
         let attached = enter_listener_cgroup();
         let (landlock, cgroup_jail) = apply_report_flags();
         assert!(landlock, "apply report landlock must be true");
@@ -774,13 +824,18 @@ mod tests {
                 );
                 assert!(already_jailed());
             }
-            other => {
-                // Always invoked the installer and the apply report. A missing
-                // user bus is not an early return. Forcing the flag to a false
-                // literal still fails the source pin above.
+            Ok(false) => {
+                panic!(
+                    "enter_listener_cgroup Ok(false) is a skip, not a jail-off pass (XDG_RUNTIME_DIR={:?})",
+                    std::env::var_os("XDG_RUNTIME_DIR")
+                );
+            }
+            Err(e) => {
+                // A missing user bus is an error, not Ok(false). Forcing the
+                // flag to a false literal still fails the source pin above.
                 assert!(
                     !cgroup_jail,
-                    "apply report cgroup_jail must follow enter_listener_cgroup, got {other:?}"
+                    "apply report cgroup_jail must follow enter_listener_cgroup, got Err({e})"
                 );
             }
         }

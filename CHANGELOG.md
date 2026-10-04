@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Unit tests now call the real harden report, `handoff_result_message` kind gate, `read::run` never-grant, inspect-vm parse path, jailer-launch cleanup, `assert_host_vmm_hygiene`, and vsock UTF-8 reject. A cgroup skip is not a pass.
+- Unit tests now call the real harden report, `handoff_result_message` kind gate, `read::run` never-grant, inspect-vm parse path, jailer-launch cleanup, `assert_host_vmm_hygiene`, and vsock UTF-8 reject. A cgroup skip is not a pass. `enter_listener_cgroup` `Ok(false)` with `XDG_RUNTIME_DIR` unset fails `cgroup_jail_attaches_under_user_service`.
 
 ### Removed
 
