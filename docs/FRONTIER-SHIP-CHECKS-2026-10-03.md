@@ -8,9 +8,11 @@ Maps each check to a disk instrument. Box-closed uses these; Serve-closed adds t
 | Repro + determinism | `cargo test -p aegis-common --lib decision_chain`; release prove scripts |
 | Negative contracts | `scripts/neg-chain-unwritable.sh` (real append); corrupt/empty-anchor paths |
 | Sad-path lifecycle | `SpawnGuard` + `LaunchedVm` Drop; early `jail_id=`; residue scripts |
-| Concurrency / shared state | in-process `APPEND_GATE` + unix `flock`; single-tenant serve accept loop |
-| Least privilege | receipt names NOPASSWD jailer **and** host `(ALL:ALL) ALL` |
-| Config drift | serve refuses without `REQUIRE_ANCESTOR`; systemd not enabled |
+| Concurrency / shared state | in-process `APPEND_GATE` + unix `flock`; serve thread-per-conn + dual-client prove |
+| Least privilege | receipt names NOPASSWD jailer **and** host `(ALL:ALL) ALL` (password for ALL) |
+| Config drift | serve refuses without `REQUIRE_ANCESTOR`; systemd enable Landen-gated |
+| Serve UDS | `scripts/serve-uds-prove.sh`; umask restored after bind; response `jail_id`+`tip`+`authz=uid_only_socket` |
+| Serve parity | `scripts/serve-closed-parity.sh` |
 | Observability | `jail_id=`, tip, verify/anchor lines, exit code |
 | Rollback | `docs/RUNBOOK-CHAIN-VERIFY-FAIL-2026-10-03.md` — no truncate heal |
 | Claim language | SPEAK tip-of-record + require-ancestor; receipt OVERCLAIM fixes |
