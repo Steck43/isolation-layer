@@ -1,5 +1,6 @@
-# pip looks for requirements.txt / pyproject.toml / setup.py.
-# Roofs that only ship requirements-dev.txt may get a no-op until a lockfile exists.
+# No pip ecosystem here: this roof has no requirements.txt / pyproject.toml /
+# setup.py. A pip entry produced Dependabot dependency_file_not_found (red run
+# 37385460556). Re-add pip only when a lockfile or requirements.txt lands.
 # Dependabot PRs pass the floor; no bypass actor.
 # cooldown.default-days: 7 — zizmor dependabot-cooldown. GitHub's implicit default
 # is 3 days, which is below the floor.
@@ -15,13 +16,3 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: deps
