@@ -26,7 +26,9 @@ def _load():
     return mod
 
 
-def _decision(skill: str = "*", tool: str = "write_file", path: str = "/tmp/a") -> SimpleNamespace:
+def _decision(
+    skill: str = "*", tool: str = "write_file", path: str = "/tmp/a"
+) -> SimpleNamespace:
     return SimpleNamespace(
         skill=skill,
         tool=tool,
@@ -45,7 +47,9 @@ def _atoms(ticket: str = "ticket-step12") -> SimpleNamespace:
     )
 
 
-def test_live_prove_path_requires_caller_tool_call_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_live_prove_path_requires_caller_tool_call_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Under AEGISBOX_PROVE=1, inventing skill:tool:path is a refuse."""
     mod = _load()
     monkeypatch.setenv("AEGISBOX_PROVE", "1")
@@ -68,7 +72,9 @@ def test_live_prove_path_threads_caller_id_and_invokes_prove(
     call_id = "step12-unit-20261010T000000Z"
     seen: list[str] = []
 
-    def fake_prove(*, tool_call_id: str, gate_decision_sha256: str, atoms_result_sha256: str):
+    def fake_prove(
+        *, tool_call_id: str, gate_decision_sha256: str, atoms_result_sha256: str
+    ):
         seen.append(tool_call_id)
         return {
             "jail_id": "mgr-1791600000000000000-1",
@@ -140,7 +146,9 @@ def test_live_path_still_denies_wrong_call_id(monkeypatch: pytest.MonkeyPatch) -
     mod = _load()
     monkeypatch.setenv("AEGISBOX_PROVE", "1")
 
-    def fake_prove(*, tool_call_id: str, gate_decision_sha256: str, atoms_result_sha256: str):
+    def fake_prove(
+        *, tool_call_id: str, gate_decision_sha256: str, atoms_result_sha256: str
+    ):
         return {
             "jail_id": "mgr-live-1",
             "mode": "jailed-via-helper",
@@ -153,11 +161,19 @@ def test_live_path_still_denies_wrong_call_id(monkeypatch: pytest.MonkeyPatch) -
             "inspector_stage_ok": True,
             "inspector_vm_ok": True,
             "inspector_verdict_ok": True,
-            "spot_checks": {k: True for k in (
-                "kvm_absent", "host_invisible", "vsock_ok", "vestibule_framed_ok",
-                "dropbox_handoff_ok", "inspector_stage_ok", "inspector_vm_ok",
-                "inspector_verdict_ok",
-            )},
+            "spot_checks": {
+                k: True
+                for k in (
+                    "kvm_absent",
+                    "host_invisible",
+                    "vsock_ok",
+                    "vestibule_framed_ok",
+                    "dropbox_handoff_ok",
+                    "inspector_stage_ok",
+                    "inspector_vm_ok",
+                    "inspector_verdict_ok",
+                )
+            },
             "tool_call_id": "OTHER-CALL",
             "gate_decision_sha256": gate_decision_sha256,
             "atoms_result_sha256": atoms_result_sha256,
