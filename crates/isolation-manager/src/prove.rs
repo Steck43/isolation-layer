@@ -10,6 +10,27 @@ use serde_json::json;
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
+/// Bind a prove summary to one tool call and the layer digests that authorized it.
+///
+/// Fail closed: empty call id or non-sha256 digests are refused. The receipt must
+/// carry the call id plus the gate decision record digest and the atoms result
+/// digest so a later join cannot attach a foreign prove.
+pub(crate) fn bind_call_receipt(
+    summary: serde_json::Value,
+    tool_call_id: &str,
+    gate_decision_sha256: &str,
+    atoms_result_sha256: &str,
+) -> Result<serde_json::Value, String> {
+    let _ = (
+        summary,
+        tool_call_id,
+        gate_decision_sha256,
+        atoms_result_sha256,
+    );
+    // Stub: Step 7 failing test commits first. The next commit wires the bind.
+    Err("call bind not implemented".to_string())
+}
+
 /// Append a host chain row. Fail closed: caller must abort prove on `Err`.
 fn chain_append(
     chain: &DecisionChain,
@@ -542,4 +563,60 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             "inspector_verdict_ok": inspector_verdict_ok,
         }
     }))
+}
+
+#[cfg(test)]
+mod bind_tests {
+    use super::bind_call_receipt;
+    use serde_json::json;
+
+    fn bare_summary() -> serde_json::Value {
+        json!({
+            "jail_id": "mgr-bind-test",
+            "mode": "jailed-via-helper",
+            "time_to_userspace_ms": 1.0,
+            "time_to_workload_ms": 2.0,
+            "vsock_roundtrip_ok": true,
+            "vestibule_framed_ok": true,
+            "dropbox_handoff_ok": true,
+            "dropbox_hash": "a".repeat(64),
+            "inspector_stage_ok": true,
+            "inspector_vm_ok": true,
+            "inspector_verdict_ok": true,
+            "spot_checks": {
+                "kvm_absent": true,
+                "host_invisible": true,
+                "vsock_ok": true,
+                "vestibule_framed_ok": true,
+                "dropbox_handoff_ok": true,
+                "inspector_stage_ok": true,
+                "inspector_vm_ok": true,
+                "inspector_verdict_ok": true,
+            }
+        })
+    }
+
+    #[test]
+    fn bound_receipt_carries_call_id_and_layer_digests() {
+        let gate = "1".repeat(64);
+        let atoms = "2".repeat(64);
+        let bound = bind_call_receipt(bare_summary(), "call-step7", &gate, &atoms)
+            .expect("bind must succeed for valid call id and digests");
+        assert_eq!(bound["tool_call_id"], "call-step7");
+        assert_eq!(bound["gate_decision_sha256"], gate);
+        assert_eq!(bound["atoms_result_sha256"], atoms);
+        // Bare prove shape alone is not a bound receipt.
+        assert!(bare_summary().get("tool_call_id").is_none());
+        assert!(bare_summary().get("gate_decision_sha256").is_none());
+        assert!(bare_summary().get("atoms_result_sha256").is_none());
+    }
+
+    #[test]
+    fn bind_refuses_empty_call_id_and_bad_digests() {
+        let gate = "a".repeat(64);
+        let atoms = "b".repeat(64);
+        assert!(bind_call_receipt(bare_summary(), "", &gate, &atoms).is_err());
+        assert!(bind_call_receipt(bare_summary(), "call-1", "short", &atoms).is_err());
+        assert!(bind_call_receipt(bare_summary(), "call-1", &gate, "not-hex!!!!").is_err());
+    }
 }
