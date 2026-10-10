@@ -1,0 +1,52 @@
+# isolation-manager — long-lived unprivileged manager (spine-1)
+#
+# Guests are ephemeral. This unit keeps the manager process/socket available.
+# Idle state: no Firecracker process.
+#
+# DO NOT enable until Serve-closed is an explicit Landen gate.
+# Dry-check: systemd-analyze verify deploy/systemd/isolation-manager.service
+#
+# Install (Landen):
+#   sudo install -o root -g root -m 0644 deploy/systemd/isolation-manager.service \
+#     /etc/systemd/system/isolation-manager.service
+#   sudo mkdir -p /etc/systemd/system/isolation-manager.service.d
+#   sudo install -o root -g root -m 0644 \
+#     deploy/systemd/isolation-manager.service.d/continuity.conf.example \
+#     /etc/systemd/system/isolation-manager.service.d/continuity.conf
+#   # Edit continuity.conf: set REQUIRE_ANCESTOR and AEGIS_JAILER_SHA256.
+#   sudo systemctl daemon-reload
+#   # start without enable for sandbox prove; enable only on Landen GO.
+#
+# Authz: uid-only socket (0600). Not peercred. Full sudo ALL may still exist on host.
+
+[Unit]
+Description=Aegis Isolation Manager (spine-1)
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
+Documentation=file:///home/landen/isolation-layer/docs/PLAN-live-box.md
+
+[Service]
+Type=simple
+User=landen
+Group=landen
+WorkingDirectory=/home/landen/isolation-layer
+Environment=AEGIS_DECISION_CHAIN=/home/landen/.local/state/aegis/decision-chain.jsonl
+Environment=AEGIS_REJECT_LOG=/home/landen/.local/state/aegis/vestibule-reject.jsonl
+Environment=RUST_LOG=info
+# Continuity pins live in drop-in continuity.conf (REQUIRED). Do not enable without them.
+ExecStartPre=/usr/bin/test -x /home/landen/isolation-layer/target/release/isolation-manager
+ExecStartPre=/usr/bin/test -f /etc/systemd/system/isolation-manager.service.d/continuity.conf
+ExecStartPre=/bin/sh -c 'test -n "$REQUIRE_ANCESTOR"'
+ExecStart=/home/landen/isolation-layer/target/release/isolation-manager serve --socket /home/landen/.local/state/aegis/isolation-manager.sock
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+# Do not list /run/user/1000: it is absent until logind creates the session and
+# breaks early boot with NAMESPACE (status 226) when the unit is enabled.
+ReadWritePaths=/home/landen/.local/state/aegis /tmp /opt/aegis/isolation-layer/jailer /home/landen/isolation-layer/target/release
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

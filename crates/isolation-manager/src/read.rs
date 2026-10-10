@@ -287,7 +287,9 @@ pub fn run(args: ReadArgs) -> i32 {
         );
     }
 
-    let entry = ALLOW_ENTRIES.iter().find(|e| Path::new(e.request) == args.path.as_path());
+    let entry = ALLOW_ENTRIES
+        .iter()
+        .find(|e| Path::new(e.request) == args.path.as_path());
     let Some(entry) = entry else {
         return deny(
             &requested,
@@ -424,4 +426,35 @@ pub fn run(args: ReadArgs) -> i32 {
         ts: utc_compact(),
     };
     emit_receipt(&receipt, receipt_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn run_denies_never_grant_on_canonical_pem() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("il-read-never-grant-{n}"));
+        fs::create_dir_all(&dir).unwrap();
+        let pem = dir.join("secret.pem");
+        fs::write(&pem, b"not-for-read").unwrap();
+        let receipt_path = dir.join("receipt.json");
+        let code = run(ReadArgs {
+            path: pem,
+            max_bytes: None,
+            receipt: Some(receipt_path.clone()),
+        });
+        assert_eq!(code, 2);
+        let receipt: Value =
+            serde_json::from_str(&fs::read_to_string(&receipt_path).unwrap()).unwrap();
+        assert_eq!(receipt["reason"], "never_grant");
+        assert_eq!(receipt["verdict"], "deny");
+        assert_eq!(receipt["ok"], false);
+        let _ = fs::remove_dir_all(dir);
+    }
 }

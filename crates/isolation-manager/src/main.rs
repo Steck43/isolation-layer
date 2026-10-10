@@ -4,6 +4,8 @@ mod launch;
 mod prove;
 mod prove_q1;
 mod read;
+#[cfg(unix)]
+mod serve;
 
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -33,6 +35,17 @@ pub enum Commands {
     InspectVm(InspectVmArgs),
     /// Allowlisted host-path read (observe); receipt + box-computed sha256.
     Read(ReadArgsCli),
+    /// Long-lived UDS listener (0600); JSON line {"cmd":"prove",...}.
+    #[cfg(unix)]
+    Serve(ServeArgs),
+}
+
+#[cfg(unix)]
+#[derive(Debug, Parser)]
+pub struct ServeArgs {
+    /// Unix socket path (mode 0600 after bind).
+    #[arg(long, default_value = "/home/landen/.local/state/aegis/isolation-manager.sock")]
+    pub socket: PathBuf,
 }
 
 #[derive(Debug, Parser)]
@@ -40,6 +53,24 @@ pub struct ProveArgs {
     /// Override jail id (default: mgr-<unix_ts>).
     #[arg(long)]
     pub jail_id: Option<String>,
+    /// Optional join key: Hermes session_id (host-supplied).
+    #[arg(long)]
+    pub session_id: Option<String>,
+    /// Join key: tool_call_id (host-supplied). Required for a bound prove receipt.
+    #[arg(long)]
+    pub tool_call_id: Option<String>,
+    /// Sha256 of the gate decision record for this call. Required with --tool-call-id.
+    #[arg(long)]
+    pub gate_decision_sha256: Option<String>,
+    /// Sha256 of the atoms result for this call. Required with --tool-call-id.
+    #[arg(long)]
+    pub atoms_result_sha256: Option<String>,
+    /// Require this row sha256 already in the host decision chain (continuity).
+    #[arg(long, conflicts_with = "allow_genesis")]
+    pub require_ancestor: Option<String>,
+    /// Allow an empty chain (no prior tip). Refused when the chain already has rows.
+    #[arg(long, default_value_t = false, conflicts_with = "require_ancestor")]
+    pub allow_genesis: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -113,6 +144,8 @@ fn main() {
             max_bytes: args.max_bytes,
             receipt: args.receipt,
         }),
+        #[cfg(unix)]
+        Commands::Serve(args) => serve::run(args.socket),
     };
     process::exit(code);
 }

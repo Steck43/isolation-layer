@@ -63,9 +63,38 @@ mod tests {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mgr-handoff-{n}"));
-        let r = handoff_trusted_body(&root, b"manager-owned-body").unwrap();
+        let msg = vestibule::ResultMessage {
+            schema_version: vestibule::SCHEMA_VERSION,
+            kind: "result".into(),
+            task_id: "t-1".into(),
+            filename: "out.txt".into(),
+            body: "manager-owned-body".into(),
+        };
+        let r = handoff_result_message(&root, &msg).unwrap();
         assert_eq!(r.hash.len(), 64);
         assert_eq!(r.bytes_len, b"manager-owned-body".len());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn handoff_result_message_refuses_non_result_kind() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mgr-handoff-kind-{n}"));
+        let msg = vestibule::ResultMessage {
+            schema_version: vestibule::SCHEMA_VERSION,
+            kind: "exec".into(),
+            task_id: "t-1".into(),
+            filename: "out.txt".into(),
+            body: "should-not-land".into(),
+        };
+        let err = handoff_result_message(&root, &msg).unwrap_err();
+        assert!(
+            err.contains("refused kind"),
+            "kind gate must refuse via handoff_result_message: {err}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

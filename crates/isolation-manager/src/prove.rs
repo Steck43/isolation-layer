@@ -2,16 +2,91 @@ use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use aegis_common::{assert_host_vmm_hygiene, HostSnapshot};
+use aegis_common::{
+    assert_host_vmm_hygiene, default_chain_path, ChainVerdict, DecisionChain, HostSnapshot,
+};
 use serde_json::json;
 
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Bind a prove summary to one tool call and the layer digests that authorized it.
+///
+/// Fail closed: empty call id or non-sha256 digests are refused. The receipt must
+/// carry the call id plus the gate decision record digest and the atoms result
+/// digest so a later join cannot attach a foreign prove.
+pub(crate) fn bind_call_receipt(
+    mut summary: serde_json::Value,
+    tool_call_id: &str,
+    gate_decision_sha256: &str,
+    atoms_result_sha256: &str,
+) -> Result<serde_json::Value, String> {
+    let call_id = tool_call_id.trim();
+    if call_id.is_empty() {
+        return Err("tool_call_id required for a bound prove receipt".to_string());
+    }
+    let gate = gate_decision_sha256.trim().to_ascii_lowercase();
+    let atoms = atoms_result_sha256.trim().to_ascii_lowercase();
+    if !is_sha256_hex(&gate) {
+        return Err("gate_decision_sha256 must be 64 lowercase hex chars".to_string());
+    }
+    if !is_sha256_hex(&atoms) {
+        return Err("atoms_result_sha256 must be 64 lowercase hex chars".to_string());
+    }
+    let obj = summary
+        .as_object_mut()
+        .ok_or_else(|| "prove summary must be a JSON object".to_string())?;
+    obj.insert("tool_call_id".to_string(), json!(call_id));
+    obj.insert("gate_decision_sha256".to_string(), json!(gate));
+    obj.insert("atoms_result_sha256".to_string(), json!(atoms));
+    Ok(summary)
+}
+
+/// Append a host chain row. Fail closed: caller must abort prove on `Err`.
+fn chain_append(
+    chain: &DecisionChain,
+    jail_id: &str,
+    verdict: ChainVerdict,
+    reason: &str,
+    session_id: Option<&str>,
+    tool_call_id: Option<&str>,
+) -> Result<(), i32> {
+    match chain.append(jail_id, verdict, reason, session_id, tool_call_id) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("decision_chain_append_fail: {e}");
+            Err(1)
+        }
+    }
+}
+
+fn file_sha256_hex(path: &str) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+    let dig = Sha256::digest(&bytes);
+    Ok(dig.iter().map(|b| format!("{b:02x}")).collect())
+}
 
 fn preflight_honesty_helper() -> Result<(), String> {
     use std::process::Command;
     let helper = aegis_common::paths::JAILER_LAUNCH_BIN;
+    let actual = file_sha256_hex(helper)?;
+    println!("jailer_launch_sha256={actual}");
+    if let Ok(want) = std::env::var("AEGIS_JAILER_SHA256") {
+        let want = want.trim().to_ascii_lowercase();
+        if want != actual {
+            return Err(format!(
+                "BLOCKED: installed {helper} sha256 {actual} != AEGIS_JAILER_SHA256={want}"
+            ));
+        }
+        println!("jailer_launch_sha256_match=PASS");
+    } else {
+        println!("jailer_launch_sha256_match=UNPINNED");
+    }
     let out = Command::new("strings")
         .arg(helper)
         .output()
@@ -26,64 +101,280 @@ fn preflight_honesty_helper() -> Result<(), String> {
 }
 
 pub fn run(args: ProveArgs) -> i32 {
+    let chain = DecisionChain::open(default_chain_path());
+    let session_id = args.session_id.as_deref();
+    let tool_call_id = args.tool_call_id.as_deref();
+    let gate_decision_sha256 = args.gate_decision_sha256.as_deref();
+    let atoms_result_sha256 = args.atoms_result_sha256.as_deref();
+    match (tool_call_id, gate_decision_sha256, atoms_result_sha256) {
+        (Some(c), Some(g), Some(a))
+            if !c.trim().is_empty() && is_sha256_hex(g.trim()) && is_sha256_hex(a.trim()) => {}
+        _ => {
+            eprintln!(
+                "prove refused: --tool-call-id, --gate-decision-sha256, and --atoms-result-sha256 are required for a bound receipt"
+            );
+            return 1;
+        }
+    }
+    let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
+    // Print before launch so residue scripts can name this jail on sad paths.
+    println!("jail_id={jail_id}");
+    println!("decision_chain_path={}", chain.path().display());
+    println!("decision_chain_covers=main_jail");
+    println!("inspector_chain=out_of_band");
+
+    let tip_start = match chain.tip_hash() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("decision_chain_tip_read_fail: {e}");
+            return 1;
+        }
+    };
+
+    if let Err(e) = chain.verify() {
+        eprintln!("decision_chain_verify=FAIL: {e}");
+        return 1;
+    }
+    println!("decision_chain_verify=PASS");
+
+    let empty = tip_start.chars().all(|c| c == '0');
+    match (&args.require_ancestor, args.allow_genesis, empty) {
+        (Some(anchor), _, _) => {
+            if let Err(e) = chain.require_ancestor(anchor) {
+                eprintln!("decision_chain_anchor=FAIL: {e}");
+                return 1;
+            }
+            println!("decision_chain_anchor=PASS");
+        }
+        (None, true, true) => {
+            println!("decision_chain_anchor=GENESIS");
+        }
+        (None, true, false) => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: --allow-genesis refused on non-empty chain"
+            );
+            return 1;
+        }
+        (None, false, true) => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: empty chain needs --allow-genesis or --require-ancestor"
+            );
+            return 1;
+        }
+        (None, false, false) => {
+            eprintln!(
+                "decision_chain_anchor=FAIL: non-empty chain requires --require-ancestor (UNCHECKED refused)"
+            );
+            return 1;
+        }
+    }
+
     if let Err(e) = preflight_honesty_helper() {
         eprintln!("{e}");
+        if let Err(code) = chain_append(
+            &chain,
+            &jail_id,
+            ChainVerdict::FailClosed,
+            "preflight_honesty_helper",
+            session_id,
+            tool_call_id,
+        ) {
+            return code;
+        }
         return 2;
     }
-    let jail_id = args.jail_id.unwrap_or_else(|| fresh_jail_id("mgr"));
 
     let before = match HostSnapshot::capture() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("host snapshot failed: {e}");
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("host_snapshot:{e}"),
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
             return 1;
         }
     };
+
+    if let Err(code) = chain_append(
+        &chain,
+        &jail_id,
+        ChainVerdict::Launch,
+        "launch_via_helper",
+        session_id,
+        tool_call_id,
+    ) {
+        return code;
+    }
 
     let mut vm = match launch_via_helper(&jail_id) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("launch:{e}"),
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
             return 2;
         }
     };
 
     let result = run_checks(&mut vm);
-    teardown_vm(&mut vm);
+    // Idempotent: run_checks may already have torn down the main jail for inspector.
+    let teardown_status = match teardown_vm(&mut vm) {
+        Ok(()) => "teardown_vm_ok".to_string(),
+        Err(e) => {
+            eprintln!("teardown_vm=FAIL: {e}");
+            format!("teardown_vm_fail:{e}")
+        }
+    };
+    if let Err(code) = chain_append(
+        &chain,
+        &jail_id,
+        if teardown_status.starts_with("teardown_vm_ok") {
+            ChainVerdict::Teardown
+        } else {
+            ChainVerdict::FailClosed
+        },
+        &teardown_status,
+        session_id,
+        tool_call_id,
+    ) {
+        return code;
+    }
+    if !teardown_status.starts_with("teardown_vm_ok") {
+        return 1;
+    }
     std::thread::sleep(Duration::from_secs(3));
 
     let after = match HostSnapshot::capture() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("post-teardown snapshot failed: {e}");
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("post_snapshot:{e}"),
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
             return 1;
         }
     };
 
     match assert_host_vmm_hygiene(&before, &after) {
         Ok(()) => {
-            // Honest name: VMM residue + golden artifact hashes (not full FS manifest).
             println!("host_vmm_hygiene=PASS");
-            println!("host_untouched=PASS"); // alias for prior receipts
+            println!("host_untouched=PASS");
             println!(
                 "golden_rootfs_sha256={}",
                 after.golden_rootfs_sha256
             );
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::HostUntouched,
+                "host_vmm_hygiene_pass",
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
         }
         Err(e) => {
             eprintln!("host_vmm_hygiene=FAIL: {e}");
             eprintln!("host_untouched=FAIL: {e}");
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("host_vmm_hygiene:{e}"),
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
             return 1;
         }
     }
 
     match result {
         Ok(summary) => {
-            println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+            let summary = match bind_call_receipt(
+                summary,
+                tool_call_id.unwrap_or(""),
+                gate_decision_sha256.unwrap_or(""),
+                atoms_result_sha256.unwrap_or(""),
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("prove_bind_fail: {e}");
+                    return 1;
+                }
+            };
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::Prove,
+                "prove_checks_ok",
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
+            let tip = match chain.tip_hash() {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("decision_chain_tip_read_fail: {e}");
+                    return 1;
+                }
+            };
+            if tip == tip_start {
+                eprintln!("decision_chain_tip_unchanged: prove recorded no new rows");
+                return 1;
+            }
+            println!("decision_chain_tip={tip}");
+            if let Err(e) = chain.verify() {
+                eprintln!("decision_chain_verify=FAIL: {e}");
+                return 1;
+            }
+            println!("decision_chain_verify=PASS");
+            match serde_json::to_string_pretty(&summary) {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    eprintln!("summary_json_fail: {e}");
+                    return 1;
+                }
+            }
             0
         }
         Err(e) => {
             eprintln!("prove failed: {e}");
+            if let Err(code) = chain_append(
+                &chain,
+                &jail_id,
+                ChainVerdict::FailClosed,
+                &format!("prove_checks:{e}"),
+                session_id,
+                tool_call_id,
+            ) {
+                return code;
+            }
             1
         }
     }
@@ -157,7 +448,10 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     stdin.flush().map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_secs(3));
 
-    let vsock_rx = vsock_handle.join().unwrap().map_err(|e| e.to_string())?;
+    let vsock_rx = vsock_handle
+        .join()
+        .map_err(|_| "vsock thread panicked".to_string())?
+        .map_err(|e| e.to_string())?;
     let vsock_ok = !vsock_rx.is_empty();
     println!("vsock_roundtrip_ok={vsock_ok}");
     if vsock_ok {
@@ -201,7 +495,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     let vestibule_msg = vestibule_handle
         .join()
-        .unwrap()
+        .map_err(|_| "vestibule thread panicked".to_string())?
         .map_err(|e| format!("vestibule framed prove failed: {e}"))?;
     let vestibule_ok = vestibule_msg.kind == "result"
         && vestibule_msg.task_id == "prove-b3"
@@ -243,7 +537,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     // Tear down prove VM before disposable inspector (single-guest surface for inspect receipt).
     vm.stdin = Some(stdin);
-    teardown_vm(vm);
+    let _ = teardown_vm(vm);
     thread::sleep(Duration::from_secs(2));
 
     // B3.2d: disposable FC inspector — claim schema + host disposition Advance.
@@ -308,4 +602,60 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             "inspector_verdict_ok": inspector_verdict_ok,
         }
     }))
+}
+
+#[cfg(test)]
+mod bind_tests {
+    use super::bind_call_receipt;
+    use serde_json::json;
+
+    fn bare_summary() -> serde_json::Value {
+        json!({
+            "jail_id": "mgr-bind-test",
+            "mode": "jailed-via-helper",
+            "time_to_userspace_ms": 1.0,
+            "time_to_workload_ms": 2.0,
+            "vsock_roundtrip_ok": true,
+            "vestibule_framed_ok": true,
+            "dropbox_handoff_ok": true,
+            "dropbox_hash": "a".repeat(64),
+            "inspector_stage_ok": true,
+            "inspector_vm_ok": true,
+            "inspector_verdict_ok": true,
+            "spot_checks": {
+                "kvm_absent": true,
+                "host_invisible": true,
+                "vsock_ok": true,
+                "vestibule_framed_ok": true,
+                "dropbox_handoff_ok": true,
+                "inspector_stage_ok": true,
+                "inspector_vm_ok": true,
+                "inspector_verdict_ok": true,
+            }
+        })
+    }
+
+    #[test]
+    fn bound_receipt_carries_call_id_and_layer_digests() {
+        let gate = "1".repeat(64);
+        let atoms = "2".repeat(64);
+        let bound = bind_call_receipt(bare_summary(), "call-step7", &gate, &atoms)
+            .expect("bind must succeed for valid call id and digests");
+        assert_eq!(bound["tool_call_id"], "call-step7");
+        assert_eq!(bound["gate_decision_sha256"], gate);
+        assert_eq!(bound["atoms_result_sha256"], atoms);
+        // Bare prove shape alone is not a bound receipt.
+        assert!(bare_summary().get("tool_call_id").is_none());
+        assert!(bare_summary().get("gate_decision_sha256").is_none());
+        assert!(bare_summary().get("atoms_result_sha256").is_none());
+    }
+
+    #[test]
+    fn bind_refuses_empty_call_id_and_bad_digests() {
+        let gate = "a".repeat(64);
+        let atoms = "b".repeat(64);
+        assert!(bind_call_receipt(bare_summary(), "", &gate, &atoms).is_err());
+        assert!(bind_call_receipt(bare_summary(), "call-1", "short", &atoms).is_err());
+        assert!(bind_call_receipt(bare_summary(), "call-1", &gate, "not-hex!!!!").is_err());
+    }
 }

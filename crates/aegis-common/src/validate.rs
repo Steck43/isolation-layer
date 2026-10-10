@@ -47,8 +47,10 @@ impl LaunchRequest {
         sudo_gid: Option<u32>,
     ) -> Result<Self, ValidationError> {
         validate_jail_id(jail_id)?;
-        let kernel = validate_allowlisted(kernel_path, ALLOWED_KERNEL_PATHS)?;
-        let rootfs = validate_allowlisted(rootfs_path, ALLOWED_ROOTFS_PATHS)?;
+        let kernel_allow = kernel_allowlist();
+        let rootfs_allow = rootfs_allowlist();
+        let kernel = validate_allowlisted(kernel_path, &kernel_allow)?;
+        let rootfs = validate_allowlisted(rootfs_path, &rootfs_allow)?;
 
         let (actual_uid, actual_gid) = match (sudo_uid, sudo_gid) {
             (Some(u), Some(g)) => (u, g),
@@ -129,17 +131,68 @@ pub fn validate_jail_id(jail_id: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn validate_allowlisted(path: &Path, allowlist: &[&str]) -> Result<PathBuf, ValidationError> {
+fn kernel_allowlist() -> Vec<String> {
+    #[cfg(test)]
+    {
+        if let Ok(dir) = std::env::var("AEGIS_TEST_ARTIFACTS_DIR") {
+            if !dir.is_empty() {
+                return vec![PathBuf::from(dir)
+                    .join("vmlinux-6.1.176")
+                    .to_string_lossy()
+                    .into_owned()];
+            }
+        }
+    }
+    ALLOWED_KERNEL_PATHS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+fn rootfs_allowlist() -> Vec<String> {
+    #[cfg(test)]
+    {
+        if let Ok(dir) = std::env::var("AEGIS_TEST_ARTIFACTS_DIR") {
+            if !dir.is_empty() {
+                return vec![PathBuf::from(dir)
+                    .join("ubuntu-24.04.ext4")
+                    .to_string_lossy()
+                    .into_owned()];
+            }
+        }
+    }
+    ALLOWED_ROOTFS_PATHS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+fn validate_allowlisted(path: &Path, allowlist: &[String]) -> Result<PathBuf, ValidationError> {
     let canonical = path
         .canonicalize()
         .map_err(|_| ValidationError::NonCanonicalPath(path.display().to_string()))?;
-    let canonical_str = canonical.to_string_lossy();
-    if allowlist.iter().any(|allowed| *allowed == canonical_str) {
+    // Compare canonical forms so /opt/aegis/... → symlink → ~/isolation-layer/... still matches.
+    let allowed = allowlist.iter().any(|entry| {
+        Path::new(entry)
+            .canonicalize()
+            .map(|a| a == canonical)
+            .unwrap_or(false)
+            || *entry == canonical.to_string_lossy()
+    });
+    if allowed {
         Ok(canonical)
-    } else if allowlist == ALLOWED_KERNEL_PATHS {
-        Err(ValidationError::KernelNotAllowed(canonical_str.into_owned()))
+    } else if allowlist
+        .first()
+        .map(|p| p.ends_with("vmlinux-6.1.176"))
+        .unwrap_or(false)
+    {
+        Err(ValidationError::KernelNotAllowed(
+            canonical.to_string_lossy().into_owned(),
+        ))
     } else {
-        Err(ValidationError::RootfsNotAllowed(canonical_str.into_owned()))
+        Err(ValidationError::RootfsNotAllowed(
+            canonical.to_string_lossy().into_owned(),
+        ))
     }
 }
 
@@ -156,25 +209,37 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
-    fn touch_allowlisted_kernel() -> PathBuf {
-        let dir = PathBuf::from(crate::paths::ARTIFACTS_DIR);
-        fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("vmlinux-6.1.176");
-        if !p.exists() {
-            fs::write(&p, b"test-kernel").unwrap();
-        }
-        p
+    fn artifacts_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    fn touch_allowlisted_rootfs() -> PathBuf {
-        let dir = PathBuf::from(crate::paths::ARTIFACTS_DIR);
+    struct TestArtifacts {
+        _lock: MutexGuard<'static, ()>,
+        kernel: PathBuf,
+        rootfs: PathBuf,
+    }
+
+    fn test_artifacts() -> TestArtifacts {
+        let lock = artifacts_lock().lock().unwrap();
+        let dir = std::env::temp_dir().join("aegis-common-validate-artifacts");
         fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("ubuntu-24.04.ext4");
-        if !p.exists() {
-            fs::write(&p, b"test-rootfs").unwrap();
+        std::env::set_var("AEGIS_TEST_ARTIFACTS_DIR", &dir);
+        let kernel = dir.join("vmlinux-6.1.176");
+        let rootfs = dir.join("ubuntu-24.04.ext4");
+        if !kernel.exists() {
+            fs::write(&kernel, b"test-kernel").unwrap();
         }
-        p
+        if !rootfs.exists() {
+            fs::write(&rootfs, b"test-rootfs").unwrap();
+        }
+        TestArtifacts {
+            _lock: lock,
+            kernel,
+            rootfs,
+        }
     }
 
     #[test]
@@ -190,13 +255,13 @@ mod tests {
 
     #[test]
     fn rejects_kernel_not_on_allowlist() {
-        let rootfs = touch_allowlisted_rootfs();
-        let evil = PathBuf::from("/tmp/evil-vmlinux");
+        let arts = test_artifacts();
+        let evil = std::env::temp_dir().join("evil-vmlinux");
         fs::write(&evil, b"evil").unwrap();
         let err = LaunchRequest::validate(
             "mgr-test00001",
             &evil,
-            &rootfs,
+            &arts.rootfs,
             1000,
             1000,
             Some(1000),
@@ -209,12 +274,12 @@ mod tests {
 
     #[test]
     fn rejects_rootfs_not_on_allowlist() {
-        let kernel = touch_allowlisted_kernel();
-        let evil = PathBuf::from("/tmp/evil-rootfs.ext4");
+        let arts = test_artifacts();
+        let evil = std::env::temp_dir().join("evil-rootfs.ext4");
         fs::write(&evil, b"evil").unwrap();
         let err = LaunchRequest::validate(
             "mgr-test00001",
-            &kernel,
+            &arts.kernel,
             &evil,
             1000,
             1000,
@@ -228,12 +293,11 @@ mod tests {
 
     #[test]
     fn rejects_uid_mismatch() {
-        let kernel = touch_allowlisted_kernel();
-        let rootfs = touch_allowlisted_rootfs();
+        let arts = test_artifacts();
         let err = LaunchRequest::validate(
             "mgr-test00001",
-            &kernel,
-            &rootfs,
+            &arts.kernel,
+            &arts.rootfs,
             9999,
             1000,
             Some(1000),
@@ -245,12 +309,11 @@ mod tests {
 
     #[test]
     fn rejects_without_sudo_env() {
-        let kernel = touch_allowlisted_kernel();
-        let rootfs = touch_allowlisted_rootfs();
+        let arts = test_artifacts();
         let err = LaunchRequest::validate(
             "mgr-test00001",
-            &kernel,
-            &rootfs,
+            &arts.kernel,
+            &arts.rootfs,
             1000,
             1000,
             None,
@@ -262,12 +325,11 @@ mod tests {
 
     #[test]
     fn accepts_golden_paths() {
-        let kernel = touch_allowlisted_kernel();
-        let rootfs = touch_allowlisted_rootfs();
+        let arts = test_artifacts();
         let req = LaunchRequest::validate(
             "mgr-valid0001",
-            &kernel,
-            &rootfs,
+            &arts.kernel,
+            &arts.rootfs,
             1000,
             1000,
             Some(1000),
@@ -281,5 +343,22 @@ mod tests {
     fn rejects_non_cgroup_v2() {
         assert!(assert_cgroup_version("1").is_err());
         assert!(assert_cgroup_version("2").is_ok());
+    }
+
+    #[test]
+    fn vm_config_has_no_network_interface() {
+        let req = LaunchRequest {
+            jail_id: "mgr-valid0001".into(),
+            kernel_path: PathBuf::from("/opt/aegis/isolation-layer/artifacts/x86_64/vmlinux-6.1.176"),
+            rootfs_path: PathBuf::from(
+                "/opt/aegis/isolation-layer/artifacts/x86_64/ubuntu-24.04.ext4",
+            ),
+            uid: 1000,
+            gid: 1000,
+        };
+        let cfg = req.vm_config_json();
+        assert!(!cfg.contains("network"));
+        assert!(!cfg.contains("tap"));
+        assert!(cfg.contains("vsock"));
     }
 }
