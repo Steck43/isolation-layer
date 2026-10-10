@@ -1,5 +1,5 @@
 //! Long-lived manager socket (uid-only).
-//! Accepts one-line JSON: {"cmd":"prove","session_id":"?","tool_call_id":"?"}
+//! Accepts one-line JSON: {"cmd":"prove","session_id":"?","tool_call_id":"?","gate_decision_sha256":"?","atoms_result_sha256":"?"}
 //! Authz: filesystem mode 0600 on the socket. Same-uid peers may connect.
 //! This is not peercred / grant identity (four_plane residual).
 //!
@@ -31,6 +31,10 @@ struct Req {
     session_id: Option<String>,
     #[serde(default)]
     tool_call_id: Option<String>,
+    #[serde(default)]
+    gate_decision_sha256: Option<String>,
+    #[serde(default)]
+    atoms_result_sha256: Option<String>,
     #[serde(default)]
     jail_id: Option<String>,
 }
@@ -134,6 +138,8 @@ fn handle_conn(mut stream: UnixStream, require_ancestor: Option<String>, allow_g
         jail_id: req.jail_id.clone(),
         session_id: req.session_id,
         tool_call_id: req.tool_call_id,
+        gate_decision_sha256: req.gate_decision_sha256,
+        atoms_result_sha256: req.atoms_result_sha256,
         require_ancestor,
         allow_genesis,
     });

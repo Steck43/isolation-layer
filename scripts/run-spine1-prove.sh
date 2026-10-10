@@ -13,13 +13,24 @@ fi
 mkdir -p "$(dirname "$AEGIS_DECISION_CHAIN")"
 cd "$HOME/isolation-layer"
 
+# Bound receipt digests: sha256 of the gate decision record and atoms result for this call.
+# Override with GATE_DECISION_SHA256 / ATOMS_RESULT_SHA256 when joining a live call.
+GATE_DIGEST="${GATE_DECISION_SHA256:-$(printf '%s' '{"verdict":"allow","skill":"*","tool":"write_file","reason":"spine1-live-bind"}' | sha256sum | awk '{print $1}')}"
+ATOMS_DIGEST="${ATOMS_RESULT_SHA256:-$(printf '%s' '{"block_message":null,"winning_effect":null,"call_id":"w1prove"}' | sha256sum | awk '{print $1}')}"
+CALL_ID="${TOOL_CALL_ID:-w1prove}"
+
 set +e
 cargo run --release -q -p isolation-manager -- prove \
   --session-id spine1 \
-  --tool-call-id w1prove \
+  --tool-call-id "$CALL_ID" \
+  --gate-decision-sha256 "$GATE_DIGEST" \
+  --atoms-result-sha256 "$ATOMS_DIGEST" \
   --require-ancestor "$ANCHOR" 2>&1 | tee /tmp/prove-spine1.out
 EC=${PIPESTATUS[0]}
 set -e
+echo "bound_tool_call_id=$CALL_ID"
+echo "bound_gate_decision_sha256=$GATE_DIGEST"
+echo "bound_atoms_result_sha256=$ATOMS_DIGEST"
 
 echo "EXIT=$EC"
 
