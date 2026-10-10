@@ -10,25 +10,40 @@ use serde_json::json;
 use crate::launch::{fresh_jail_id, launch_via_helper, teardown_vm};
 use crate::ProveArgs;
 
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// Bind a prove summary to one tool call and the layer digests that authorized it.
 ///
 /// Fail closed: empty call id or non-sha256 digests are refused. The receipt must
 /// carry the call id plus the gate decision record digest and the atoms result
 /// digest so a later join cannot attach a foreign prove.
 pub(crate) fn bind_call_receipt(
-    summary: serde_json::Value,
+    mut summary: serde_json::Value,
     tool_call_id: &str,
     gate_decision_sha256: &str,
     atoms_result_sha256: &str,
 ) -> Result<serde_json::Value, String> {
-    let _ = (
-        summary,
-        tool_call_id,
-        gate_decision_sha256,
-        atoms_result_sha256,
-    );
-    // Stub: Step 7 failing test commits first. The next commit wires the bind.
-    Err("call bind not implemented".to_string())
+    let call_id = tool_call_id.trim();
+    if call_id.is_empty() {
+        return Err("tool_call_id required for a bound prove receipt".to_string());
+    }
+    let gate = gate_decision_sha256.trim().to_ascii_lowercase();
+    let atoms = atoms_result_sha256.trim().to_ascii_lowercase();
+    if !is_sha256_hex(&gate) {
+        return Err("gate_decision_sha256 must be 64 lowercase hex chars".to_string());
+    }
+    if !is_sha256_hex(&atoms) {
+        return Err("atoms_result_sha256 must be 64 lowercase hex chars".to_string());
+    }
+    let obj = summary
+        .as_object_mut()
+        .ok_or_else(|| "prove summary must be a JSON object".to_string())?;
+    obj.insert("tool_call_id".to_string(), json!(call_id));
+    obj.insert("gate_decision_sha256".to_string(), json!(gate));
+    obj.insert("atoms_result_sha256".to_string(), json!(atoms));
+    Ok(summary)
 }
 
 /// Append a host chain row. Fail closed: caller must abort prove on `Err`.
@@ -89,6 +104,18 @@ pub fn run(args: ProveArgs) -> i32 {
     let chain = DecisionChain::open(default_chain_path());
     let session_id = args.session_id.as_deref();
     let tool_call_id = args.tool_call_id.as_deref();
+    let gate_decision_sha256 = args.gate_decision_sha256.as_deref();
+    let atoms_result_sha256 = args.atoms_result_sha256.as_deref();
+    match (tool_call_id, gate_decision_sha256, atoms_result_sha256) {
+        (Some(c), Some(g), Some(a))
+            if !c.trim().is_empty() && is_sha256_hex(g.trim()) && is_sha256_hex(a.trim()) => {}
+        _ => {
+            eprintln!(
+                "prove refused: --tool-call-id, --gate-decision-sha256, and --atoms-result-sha256 are required for a bound receipt"
+            );
+            return 1;
+        }
+    }
     let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
     // Print before launch so residue scripts can name this jail on sad paths.
     println!("jail_id={jail_id}");
@@ -288,6 +315,18 @@ pub fn run(args: ProveArgs) -> i32 {
 
     match result {
         Ok(summary) => {
+            let summary = match bind_call_receipt(
+                summary,
+                tool_call_id.unwrap_or(""),
+                gate_decision_sha256.unwrap_or(""),
+                atoms_result_sha256.unwrap_or(""),
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("prove_bind_fail: {e}");
+                    return 1;
+                }
+            };
             if let Err(code) = chain_append(
                 &chain,
                 &jail_id,

@@ -56,9 +56,15 @@ pub struct ProveArgs {
     /// Optional join key: Hermes session_id (host-supplied).
     #[arg(long)]
     pub session_id: Option<String>,
-    /// Optional join key: tool_call_id (host-supplied).
+    /// Join key: tool_call_id (host-supplied). Required for a bound prove receipt.
     #[arg(long)]
     pub tool_call_id: Option<String>,
+    /// Sha256 of the gate decision record for this call. Required with --tool-call-id.
+    #[arg(long)]
+    pub gate_decision_sha256: Option<String>,
+    /// Sha256 of the atoms result for this call. Required with --tool-call-id.
+    #[arg(long)]
+    pub atoms_result_sha256: Option<String>,
     /// Require this row sha256 already in the host decision chain (continuity).
     #[arg(long, conflicts_with = "allow_genesis")]
     pub require_ancestor: Option<String>,
