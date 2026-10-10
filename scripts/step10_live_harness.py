@@ -232,6 +232,7 @@ def run_one_write_live(
         tool=tool,
         path=path,
         content=content,
+        tool_call_id=call_id,
     )
     if box_entry_receipt is None:
         raise RuntimeError("box_entry refused the clean-allow fixture")
