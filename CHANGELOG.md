@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Step 12: `scripts/box_entry.py` `run` accepts `tool_call_id` and, when `AEGISBOX_PROVE=1`, boots live `isolation-manager prove` under that id (no `skill:tool:path` invent). Unset env keeps the CI-shaped contract receipt. Fake, replay, and wrong-call-id denials still run through `accept_bound_receipt`. `tests/test_step12_box_entry_live.py` pins both paths. `always_invoked` stays false.
 - `receipts/STEP-10b-2026-10-09.md`: re-prove of the Step 10 live harness on a clean isolation `main` tip (`9cdf7ee`) on aegisbox after the scaffold checkout was moved aside (call id `step10b-20261010T025228Z`). Host HEAD and `git status` are named on the receipt. `always_invoked` stays false.
 - `scripts/step10_live_harness.py` runs one write through real `Gate.evaluate` and `evaluate_tool_call`, seals gate and atoms digests through `box_entry`, and can feed those digests into live `isolation-manager prove` on aegisbox. `tests/test_step10_live_e2e.py` fails first until those digests match recomputation. `receipts/STEP-10-2026-10-09.md` records the live call (`step10-20261010T010139Z`). `always_invoked` stays false.
 - `receipts/INVENTORY-2026-10-09.md` records box and judge state (BUILT / TESTED / LIVE-PROVEN) before Step 10 wiring. `always_invoked` stays false.
