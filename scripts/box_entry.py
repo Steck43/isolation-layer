@@ -43,8 +43,10 @@ def _get(receipt: Any, key: str) -> Any:
 
 
 def _is_sha256_hex(s: Any) -> bool:
-    return isinstance(s, str) and len(s) == 64 and all(
-        c in "0123456789abcdef" for c in s.lower()
+    return (
+        isinstance(s, str)
+        and len(s) == 64
+        and all(c in "0123456789abcdef" for c in s.lower())
     )
 
 
