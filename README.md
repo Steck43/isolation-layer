@@ -61,7 +61,7 @@ Rust workspace, six crates:
 
 | Crate | Role |
 |---|---|
-| `isolation-manager` | Launch, prove, inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). |
+| `isolation-manager` | Launch, prove (receipt bound to call id plus gate and atoms digests), inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). |
 | `jailer-launch` | Jailer invocation and privilege drop. |
 | `vestibule` | Seccomp allowlist, **default KILL**. Landlock filesystem allowlist. |
 | `inspector` | Post-run verdict and host-disposition checks. |
