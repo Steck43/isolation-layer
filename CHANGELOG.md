@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `receipts/INVENTORY-2026-10-09.md` records box and judge state (BUILT / TESTED / LIVE-PROVEN) before Step 10 wiring. `always_invoked` stays false.
+
 ### Fixed
 
 - Drop the Dependabot `pip` ecosystem on this roof. There is no `requirements.txt` or `pyproject.toml`, so the weekly pip job failed with `dependency_file_not_found` (run `37385460556`).
