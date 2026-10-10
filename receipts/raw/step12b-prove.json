@@ -1,0 +1,36 @@
+{
+  "AEGISBOX_PROVE": "1",
+  "atoms_result_sha256": "899df09171109b42d47532219098783c72a122e05ecab4e447c57961ccd3d6c6",
+  "gate_decision_sha256": "e75b88f040e1db30f2d9c63d775e15b14ae90d99ae5c2fd72fb3f05406ece2fa",
+  "isolation_root": "/home/landen/isolation-layer",
+  "prove_json": {
+    "atoms_result_sha256": "899df09171109b42d47532219098783c72a122e05ecab4e447c57961ccd3d6c6",
+    "call_digest": "22f5cb8b7e1fd9419c99b62180c02a83d0759f4bb1aa1d28ee129b87be147f63",
+    "dropbox_handoff_ok": true,
+    "dropbox_hash": "2d2e03c82f7948db88eed0e8a28e5a2c12a5fa04c4668ecb3f768eacb6d2e3e5",
+    "gate_decision_sha256": "e75b88f040e1db30f2d9c63d775e15b14ae90d99ae5c2fd72fb3f05406ece2fa",
+    "inspector_stage_ok": true,
+    "inspector_verdict_ok": true,
+    "inspector_vm_ok": true,
+    "jail_id": "mgr-1791608753378642778-53039",
+    "mode": "jailed-via-helper",
+    "receipt_id": "10262b0a90e549739025a0a04ebca060",
+    "spot_checks": {
+      "dropbox_handoff_ok": true,
+      "host_invisible": true,
+      "inspector_stage_ok": true,
+      "inspector_verdict_ok": true,
+      "inspector_vm_ok": true,
+      "kvm_absent": true,
+      "vestibule_framed_ok": true,
+      "vsock_ok": true
+    },
+    "ticket_digest": "9278ed8b17a3ec9fb6247ac58da9f87142c2697037791c0c7ad72bfbf9d22ebe",
+    "time_to_userspace_ms": 1301.3,
+    "time_to_workload_ms": 35447.7,
+    "tool_call_id": "step12b-20261010T050553Z",
+    "vestibule_framed_ok": true,
+    "vsock_roundtrip_ok": true
+  },
+  "tool_call_id": "step12b-20261010T050553Z"
+}
