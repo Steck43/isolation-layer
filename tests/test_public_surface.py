@@ -19,9 +19,11 @@ def _iter_text_files() -> list[Path]:
 
 
 def _is_live_box_seat_record(path: Path) -> bool:
-    """Seat install and operator handoff may name the host checkout."""
+    """Seat install, raw evidence, and operator handoff may name the checkout."""
     rel = path.relative_to(ROOT)
     if rel.parts[:1] == ("deploy",):
+        return True
+    if rel.parts[:2] == ("receipts", "raw"):
         return True
     return rel.parts[:1] == ("docs",) and rel.name.startswith("OPERATOR-HANDOFF")
 
