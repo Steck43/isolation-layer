@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drop the Dependabot `pip` ecosystem on this roof. There is no `requirements.txt` or `pyproject.toml`, so the weekly pip job failed with `dependency_file_not_found` (run `37385460556`).
+
 ### Added
 
-- scripts/box_entry.py accepts only prove-shaped receipts bound to this call id, ticket digest, and content hash. Fake, replayed, and wrong-call-id receipts are denied. lways_invoked stays false.
+- `scripts/box_entry.py` accepts only prove-shaped receipts bound to this call id, ticket digest, and content hash. Fake, replayed, and wrong-call-id receipts are denied. `always_invoked` stays false.
 - Prove receipts bind to `--tool-call-id` plus `--gate-decision-sha256` and `--atoms-result-sha256`. A prove without those three is refused. `always_invoked` stays false until a receipt proves otherwise.
 - Unit tests now call the real harden report, `handoff_result_message` kind gate, `read::run` never-grant, inspect-vm parse path, jailer-launch cleanup, `assert_host_vmm_hygiene`, and vsock UTF-8 reject. A cgroup skip is not a pass. `enter_listener_cgroup` `Ok(false)` with `XDG_RUNTIME_DIR` unset fails `cgroup_jail_attaches_under_user_service`.
 
