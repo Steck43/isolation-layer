@@ -87,7 +87,7 @@ Two things this repository will not claim:
 
 The probe suite is **fail-first**: every probe has a named negative control, and a probe that cannot be made to fail on purpose does not count as passing. Host-to-VM is treated as untrusted-input surface and carries its own probe class, because introducing the VM introduced that boundary.
 
-Step 10 (`scripts/step10_live_harness.py`) joins a real capability-gate decision and a real atoms evaluate into the prove bind args on one call id. Unit tests recompute those digests without booting. Live jailer prove on aegisbox is gated on `AEGISBOX_PROVE=1`. `scripts/box_entry.py` remains the CI receipt contract and does not boot the jailer. `always_invoked` stays false.
+Step 10 (`scripts/step10_live_harness.py`) joins a real capability-gate decision and a real atoms evaluate into the prove bind args on one call id. Unit tests recompute those digests without booting. Live jailer prove on aegisbox is gated on `AEGISBOX_PROVE=1`. Step 10b re-ran that prove on a clean `main` tip checkout (receipt `receipts/STEP-10b-2026-10-09.md`). `scripts/box_entry.py` remains the CI receipt contract and does not boot the jailer. `always_invoked` stays false.
 
 ## Status
 
