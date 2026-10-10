@@ -7,7 +7,6 @@ on the live path) and invokes isolation-manager prove on that id.
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
