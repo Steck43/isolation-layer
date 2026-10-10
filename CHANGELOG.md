@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `receipts/INVENTORY-2026-10-09.md` records box and judge state (BUILT / TESTED / LIVE-PROVEN) before Step 10 wiring. `always_invoked` stays false.
+- `receipts/STEP-9b-2026-10-09.md`: live jailer prove on aegisbox against `main` tip `395319e` with call-bound digests.
 
 ### Fixed
 
