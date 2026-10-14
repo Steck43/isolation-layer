@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Private sync Windows tree -> aegisbox (no public push).
 # Hyper-V Default Switch DHCP moves on save/close. Prefer Tailscale host, then
-# mshome, then a one-shot IP: AEGISBOX_HOST=landen@100.72.168.92
+# mshome, then a one-shot IP: AEGISBOX_HOST=user@host
 set -euo pipefail
-SRC="${1:-/mnt/c/Users/lande/Engineering_and_Development/isolation-layer}"
-HOST="${AEGISBOX_HOST:-landen@100.72.168.92}"
+SRC="${1:-${ISOLATION_SRC:?set ISOLATION_SRC}}"
+HOST="${AEGISBOX_HOST:?set AEGISBOX_HOST}"
 cd "$SRC"
 tar --exclude='.git' --exclude='target' --exclude='artifacts' -czf - . \
   | ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'mkdir -p "$HOME/isolation-layer" && tar -C "$HOME/isolation-layer" -xzf -'

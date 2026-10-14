@@ -423,11 +423,14 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     // Give getty a moment before typing commands.
     thread::sleep(Duration::from_secs(2));
 
-    for cmd in [
-        "ls /dev/kvm 2>&1\n",
-        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n",
-        "ls /home/landen 2>&1 || echo NO_HOST_HOME\n",
-    ] {
+    let manager_home = manager_home_path();
+    let commands = [
+        "ls /dev/kvm 2>&1\n".to_string(),
+        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n"
+            .to_string(),
+        host_invisibility_probe(&manager_home),
+    ];
+    for cmd in commands {
         stdin
             .write_all(cmd.as_bytes())
             .map_err(|e| format!("serial write failed: {e}"))?;
@@ -564,7 +567,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
     let no_vmm = serial.contains("NO_VMM_PROCS");
-    let no_home = serial.contains("NO_HOST_HOME");
+    let no_home = host_home_is_invisible(&serial, &manager_home);
 
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
@@ -602,6 +605,39 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
             "inspector_verdict_ok": inspector_verdict_ok,
         }
     }))
+}
+
+pub fn manager_home_path() -> String {
+    std::env::var("HOME")
+        .ok()
+        .filter(|home| !home.is_empty())
+        .unwrap_or_else(|| "/var/lib/isolation-manager".to_string())
+}
+
+pub fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Guest probe: list `/home`, then test the manager account's resolved home.
+pub fn host_invisibility_probe(manager_home: &str) -> String {
+    format!(
+        "ls -1 /home 2>&1; if [ -e {quoted} ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n",
+        quoted = shell_single_quote(manager_home)
+    )
+}
+
+pub fn host_home_is_invisible(transcript: &str, manager_home: &str) -> bool {
+    if transcript.contains("HOST_HOME_VISIBLE") || !transcript.contains("NO_HOST_HOME") {
+        return false;
+    }
+    let name = std::path::Path::new(manager_home)
+        .file_name()
+        .and_then(|part| part.to_str())
+        .unwrap_or("");
+    if name.is_empty() {
+        return false;
+    }
+    !transcript.lines().any(|line| line.trim() == name)
 }
 
 #[cfg(test)]
@@ -657,5 +693,35 @@ mod bind_tests {
         assert!(bind_call_receipt(bare_summary(), "", &gate, &atoms).is_err());
         assert!(bind_call_receipt(bare_summary(), "call-1", "short", &atoms).is_err());
         assert!(bind_call_receipt(bare_summary(), "call-1", &gate, "not-hex!!!!").is_err());
+    }
+}
+
+#[cfg(test)]
+mod home_probe_tests {
+    use super::{host_home_is_invisible, host_invisibility_probe};
+
+    #[test]
+    fn probe_lists_guest_home_and_the_resolved_manager_home() {
+        let home = "/var/lib/isolation-manager";
+        let probe = host_invisibility_probe(home);
+        assert!(probe.contains("ls -1 /home"));
+        assert!(probe.contains(home));
+        assert!(probe.contains("NO_HOST_HOME"));
+        assert!(probe.contains("HOST_HOME_VISIBLE"));
+    }
+
+    #[test]
+    fn visible_home_fails_and_a_missing_check_fails_closed() {
+        let home = "/var/lib/isolation-manager";
+        assert!(!host_home_is_invisible(
+            "ls: cannot access '/var/lib/isolation-manager': No such file or directory\nHOST_HOME_VISIBLE\n",
+            home
+        ));
+        assert!(!host_home_is_invisible("isolation-manager\nNO_HOST_HOME\n", home));
+        assert!(!host_home_is_invisible("kvm only\n", home));
+        assert!(host_home_is_invisible(
+            "ubuntu\nNO_HOST_HOME\n",
+            home
+        ));
     }
 }

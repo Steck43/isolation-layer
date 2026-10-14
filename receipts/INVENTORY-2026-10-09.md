@@ -3,7 +3,7 @@
 Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 `always_invoked` stays false on every surface named here.
 
-## Dest tips (LandensPC, this sitting)
+## Dest tips (<dev-host>, this sitting)
 
 | Roof | Branch | SHA |
 |---|---|---|
@@ -26,7 +26,7 @@ Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 | Serve UDS | `crates/isolation-manager/src/serve.rs` | BUILT / unit-tested; live Serve not re-proven this sitting |
 | Vestibule / dropbox / inspector | workspace crates | TESTED (unit) |
 
-### Tests (LandensPC, this sitting)
+### Tests (<dev-host>, this sitting)
 
 | Suite | Count |
 |---|---|
@@ -34,18 +34,18 @@ Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 | Python floor collect | 19 collected |
 | CI floor on main after #27 (`38009764211`) | rust green; pytest 15 passed, 4 skipped |
 
-### Live substrate (aegisbox via Tailscale `100.72.168.92`)
+### Live substrate (aegisbox via Tailscale `<tailnet-host>`)
 
 | Check | Result |
 |---|---|
-| Host | `aegisbox`; eth0 `172.24.202.183`; Tailscale `100.72.168.92` |
+| Host | `aegisbox`; eth0 `<lan-host>`; Tailscale `<tailnet-host>` |
 | `/dev/kvm` | present, readable |
 | jailer | `/usr/local/bin/jailer` sha256 `1f3a0c1fe862…` |
 | jailer-launch | `/usr/local/bin/jailer-launch` sha256 `2197439fe00b…` |
 | Firecracker | v1.16.1 |
 | `isolation-manager` systemd | **enabled** (pre-existing; this sitting did not enable it) |
 | Decision chain | 89 rows at `~/.local/state/aegis/decision-chain.jsonl` |
-| Tree sync | `prove.rs` sha256 `5a1dce7b6391…` **matches** LandensPC `main` tip blob |
+| Tree sync | `prove.rs` sha256 `5a1dce7b6391…` **matches** <dev-host> `main` tip blob |
 | `scripts/box_entry.py` on box | **absent** |
 | `git -C ~/isolation-layer rev-parse HEAD` | `34289756cb69…` (**scaffold**; dirty tar overlay, not a clean `main` checkout) |
 
@@ -100,7 +100,7 @@ State summary: **TESTED** (harness / 10k). Live apply: **STARTED/off** (`judge_a
 
 | Flag | Detail |
 |---|---|
-| Dirty box overlay | aegisbox `~/isolation-layer` git tip `3428975` (scaffold) while some files match `main`; **re-sync from LandensPC `main` before Step 9b/10** |
+| Dirty box overlay | aegisbox `~/isolation-layer` git tip `3428975` (scaffold) while some files match `main`; **re-sync from <dev-host> `main` before Step 9b/10** |
 | Missing on box | `scripts/box_entry.py` absent until sync |
 | Estate atoms branch | `spine1/atoms-suite` behind/off public `master` default; not the paper tip |
 | Stale local topic branches | Many `keep/*`, `cursor/*`, `cc/*`, `aeg-50/*` unmerged on isolation/atoms/CG — do not treat as tips |

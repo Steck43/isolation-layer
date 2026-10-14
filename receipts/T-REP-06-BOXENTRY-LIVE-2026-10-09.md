@@ -10,6 +10,9 @@ with `AEGISBOX_PROVE=1`.
 - Raw evidence: `receipts/raw/step12b-prove.json`
 - Raw SHA-256:
   `e8fa518e42b4712597b100a10180d54226aba7854868a9f4aad65964f54dd882`
+  Host paths in `receipts/raw/step12b-prove.json` were redacted on 2026-10-13.
+  Original sha256 `e8fa518e42b4712597b100a10180d54226aba7854868a9f4aad65964f54dd882`.
+  Redacted sha256 `1b6f211578d034b4c9dfee2595f52f6723dd323d38b0a221de02a3f15dc33d3e`.
 - Caller / prove id: `step12b-20261010T050553Z`
 - G3: caller id, gate digest, and atoms digest exactly match the
   harness-computed values.

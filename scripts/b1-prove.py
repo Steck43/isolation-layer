@@ -17,6 +17,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def host_invisibility_probe(manager_home: str | None = None) -> str:
+    """List the guest home root, then test this process's resolved home."""
+    home = manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
+    quoted = "'" + home.replace("'", "'\\''") + "'"
+    return (
+        "ls -1 /home 2>&1; "
+        f"if [ -e {quoted} ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi"
+    )
+
+
 BIN = ROOT / "bin"
 FC_SYSTEM = Path("/usr/local/bin/firecracker")
 JAILER_SYSTEM = Path("/usr/local/bin/jailer")
@@ -330,7 +342,7 @@ def run_prove(mode: str) -> int:
     for cmd in [
         "ls /dev/kvm 2>&1",
         "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS",
-        "ls /home/landen 2>&1 || echo NO_HOST_HOME",
+        host_invisibility_probe(),
         "uname -a",
     ]:
         assert ctx.proc.stdin is not None

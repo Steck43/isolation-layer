@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Public files no longer carry a host home, a host address, or a recoverable private-name list. The surface scan stores only hashes. The guest home check uses the manager home resolved at runtime. The manager unit runs as `isolation` with home protected. Raw receipts under `receipts/raw/` keep the bytes they were hashed as.
 - README Figure 1 is the dest-true SVG. The box sits between floor and judge. Mermaid stays the sketch.
 - README drops identity-as-horizon. The four planes take identity as an argument. This roof stays the box.
 

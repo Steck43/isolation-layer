@@ -11,7 +11,7 @@ Profile: `~/.hermes/profiles/tester`
 | Honcho / memory plugin | `memory_enabled: false`; no `plugins/memory` dir; no honcho tools on allowlist |
 | `allow_tool_override` | absent from config |
 | Min tools | allowlist tools: read_file, write_file, patch, search_files, terminal only; paths workspace + notes |
-| CG realpath | `/home/landen/.hermes/profiles/tester/plugins/capability-gate` (≠ `/home/landen/.hermes/plugins/capability-gate`) |
+| CG realpath | `~/.hermes/profiles/tester/plugins/capability-gate` (≠ `~/.hermes/plugins/capability-gate`) |
 | Allowlist sha256 | `2bc639e9a1b1fec20acd499f38139a64853b2432a83cafa979df6f8833dff19d` |
 | Atoms tip | `79cb7d4148e5…` (aegis-atoms-TIP.txt); `judge_apply_verdict: false`; mode enforce (P4 subject) |
 | Partner Aegis Honcho | untouched |
@@ -19,7 +19,7 @@ Profile: `~/.hermes/profiles/tester`
 ## Negatives (W2.4 / W2.5)
 
 - Honcho tools not on allowlist → floor deny if invoked (no grant).
-- Allowlist canary paths only under `/home/landen/aegis-tester/workspace/**` and `$HERMES_HOME/notes/**` — `/etc/passwd`, `../.bashrc`, `/vault` remain outside (P4 harness negatives still the prove path).
+- Allowlist canary paths only under `~/aegis-tester/workspace/**` and `$HERMES_HOME/notes/**` — `/etc/passwd`, `../.bashrc`, `/vault` remain outside (P4 harness negatives still the prove path).
 - `hermes -p tester -z`: **not re-run this sitting** — G-18 xAI re-login may still block; Landen if CLI fails.
 
 ## Box-claim HOLD (W4.1)

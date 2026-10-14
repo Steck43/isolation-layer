@@ -13,7 +13,7 @@ Approved-by-ask: Landen 2026-10-03 (stop parking the box as a label; want it bui
 - **Atoms enforce / judge apply:** still Landen GO after would-deny adjudication on tester. Not bundled into first done line.
 - **First campaign done (Landen chose A):** Charter/spec this sitting, then execute live-box + tester observe + suite FALSE-ALLOW growth. No atoms enforce in the first done line. Career lab SPEAK/gateway/wall stays parallel (CC verify wall); not a gate on this program.
 - **Council 2026-10-03:** six coarse todos ≠ full coverage. Expanded plan SoT: `~/.cursor/plans/four-plane_program_a_13a585ba.plan.md` (W0–W6, join schema, remainder register, SPEAK unlock = prove exit 0 only).
-- **Charter (approved execute 2026-10-03):** `The_Boswell_Archive/Agent/Security/corpus-capture/specs/2026-10-03-four-plane-spine-design.md` — Frame, locks, join schema, remainder, branch names, hop/socket decisions. Landen GO = implement order on that plan.
+- **Charter (approved execute 2026-10-03):** `<private-archive>/specs/2026-10-03-four-plane-spine-design.md` — Frame, locks, join schema, remainder, branch names, hop/socket decisions. Landen GO = implement order on that plan.
 
 ---
 
@@ -55,7 +55,7 @@ Claim 125 ms. Claim maximum isolation under nested Hyper-V. Claim the career Pyt
 
 `Job_Search/prep/agent-security-lab` is a stdlib, no-network, claim-safe sprint. Isolation there is a **label** so scores stay reproducible on any PC. That protected interviews. It did not teach the box.
 
-The box already lives here: Rust workspace, B1 boot RECORD on aegisbox, B2 manager + jailer-launch, B3 vestibule listener + reject jsonl. Today's WSL session (`LandensPC`) has `/dev/kvm` and **no** `firecracker` binary. Spec v1.5: WSL2 kernel has no `CONFIG_VHOST_VSOCK`; dedicated Linux VM is the substrate.
+The box already lives here: Rust workspace, B1 boot RECORD on aegisbox, B2 manager + jailer-launch, B3 vestibule listener + reject jsonl. Today's WSL session (`<dev-host>`) has `/dev/kvm` and **no** `firecracker` binary. Spec v1.5: WSL2 kernel has no `CONFIG_VHOST_VSOCK`; dedicated Linux VM is the substrate.
 
 ---
 

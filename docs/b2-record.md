@@ -6,7 +6,7 @@ Branch: `scaffold`. Builds on B1 (Firecracker v1.16.1, golden image, jailed boot
 
 | Component | User | Privilege |
 |---|---|---|
-| `isolation-manager` | `landen` | Unprivileged |
+| `isolation-manager` | `isolation` | Unprivileged |
 | `jailer-launch` | root (via scoped sudo) | Minimal: validated jailer exec only |
 | `/usr/local/bin/jailer` | hardcoded in helper | Not caller-selectable |
 

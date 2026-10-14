@@ -19,9 +19,9 @@ chown root:root /etc/sudoers.d/aegis-jailer
 chmod 0440 /etc/sudoers.d/aegis-jailer
 visudo -cf /etc/sudoers.d/aegis-jailer
 
-echo "[4/4] verify NOPASSWD for landen on helper only"
-sudo -u landen sudo -n /usr/local/bin/jailer-launch --help >/dev/null 2>&1 || true
+echo "[4/4] verify NOPASSWD for isolation on helper only"
+sudo -u isolation sudo -n /usr/local/bin/jailer-launch --help >/dev/null 2>&1 || true
 # --help may exit 2; check sudo -l instead
-sudo -u landen sudo -n -l | grep -F '/usr/local/bin/jailer-launch'
+sudo -u isolation sudo -n -l | grep -F '/usr/local/bin/jailer-launch'
 
 echo "INSTALL OK"
