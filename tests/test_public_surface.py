@@ -906,11 +906,92 @@ def test_guest_probe_uses_the_resolved_home(monkeypatch: pytest.MonkeyPatch) -> 
     module = importlib.util.module_from_spec(spec)
     sys.modules["b1_prove"] = module
     spec.loader.exec_module(module)
-    probe = module.host_invisibility_probe()
+    probe = module.host_invisibility_probe(module.host_homes("", home))
     assert "ls -1 " + SL + HOME in probe
     assert home in probe
     assert "HOST_HOME_VISIBLE" in probe
     assert "<manager-home>" not in probe
+
+
+def _b1_prove():
+    spec = importlib.util.spec_from_file_location(
+        "b1_prove", ROOT / "scripts" / "b1-prove.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["b1_prove"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+MANAGER_HOME = SL + "var" + SL + "lib" + SL + "isolation-manager"
+OP1 = SL + HOME + SL + "op1"
+OP2 = SL + "srv" + SL + "op2"
+PASSWD = "\n".join(
+    [
+        "root:x:0:0:root:" + SL + "root:" + SL + "bin" + SL + "bash",
+        "op1:x:1000:1000:Operator:" + OP1 + ":" + SL + "bin" + SL + "bash",
+        "op2:x:1001:1001::" + OP2 + ":" + SL + "bin" + SL + "zsh",
+        "isolation:x:998:998::"
+        + MANAGER_HOME
+        + ":"
+        + SL
+        + "usr"
+        + SL
+        + "sbin"
+        + SL
+        + "nologin",
+        "svc:x:1002:1002::"
+        + SL
+        + HOME
+        + SL
+        + "svc:"
+        + SL
+        + "usr"
+        + SL
+        + "sbin"
+        + SL
+        + "nologin",
+        "locked:x:1003:1003::" + SL + HOME + SL + "locked:" + SL + "bin" + SL + "false",
+        "nobody:x:65534:65534::" + SL + "nonexistent:" + SL + "bin" + SL + "sh",
+        "broken line",
+    ]
+)
+
+
+# T35: every human home on the host is probed, and any one visible fails.
+def test_guest_probe_covers_every_human_home() -> None:
+    b1 = _b1_prove()
+    homes = b1.host_homes(PASSWD, MANAGER_HOME)
+    assert homes == sorted([OP1, OP2, MANAGER_HOME])
+    probe = b1.host_invisibility_probe(homes)
+    for home in homes:
+        assert "'" + home + "'" in probe
+    assert "NO_HOST_HOME_3" in probe
+
+
+def test_a_visible_operator_home_fails_the_probe_verdict() -> None:
+    b1 = _b1_prove()
+    homes = b1.host_homes(PASSWD, MANAGER_HOME)
+    ok = b1.host_home_is_invisible
+    assert ok("ubuntu\nNO_HOST_HOME_3\n", homes)
+    assert not ok("op1\nNO_HOST_HOME_3\n", homes)
+    assert not ok("op2\nNO_HOST_HOME_3\n", homes)
+    assert not ok("HOST_HOME_VISIBLE\nNO_HOST_HOME_3\n", homes)
+    assert not ok("ubuntu\nNO_HOST_HOME_1\n", homes)
+    assert not ok("x; echo NO_HOST_HOME_3; fi\n", homes)
+    assert not ok("kvm only\n", homes)
+    assert not ok("ubuntu\nNO_HOST_HOME_0\n", [])
+
+
+def test_python_and_rust_probes_agree() -> None:
+    rust = (ROOT / "crates" / "isolation-manager" / "src" / "prove.rs").read_text(
+        encoding="utf-8"
+    )
+    python = (ROOT / "scripts" / "b1-prove.py").read_text(encoding="utf-8")
+    for marker in ("NO_HOST_HOME_", "HOST_HOME_VISIBLE", "uid != 65534", "/nologin"):
+        assert marker in rust and marker in python, marker
+    assert "uid >= 1000" in rust and "uid >= 1000" in python
 
 
 def test_spire_issuer_takes_host_and_trust_domain_from_the_operator() -> None:

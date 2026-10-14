@@ -19,14 +19,46 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def host_invisibility_probe(manager_home: str | None = None) -> str:
-    """List the guest home root, then test this process's resolved home."""
+def host_homes(passwd: str, manager_home: str) -> list[str]:
+    """Every host home a guest must not see; mirrors prove.rs host_homes."""
+    homes = {manager_home}
+    for line in passwd.splitlines():
+        fields = line.split(":")
+        if len(fields) < 7 or not fields[2].isdigit():
+            continue
+        uid, home, shell = int(fields[2]), fields[5], fields[6].strip()
+        no_login = shell.endswith(("/nologin", "/false"))
+        if uid >= 1000 and uid != 65534 and not no_login and home.startswith("/"):
+            homes.add(home)
+    return sorted(homes)
+
+
+def resolved_host_homes(manager_home: str | None = None) -> list[str]:
     home = manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
-    quoted = "'" + home.replace("'", "'\\''") + "'"
+    passwd = Path("/etc/passwd")
+    return host_homes(passwd.read_text() if passwd.is_file() else "", home)
+
+
+def host_invisibility_probe(homes: list[str] | None = None) -> str:
+    """List the guest home root, then test every host home by path."""
+    homes = resolved_host_homes() if homes is None else homes
+    quoted = " ".join("'" + h.replace("'", "'\\''") + "'" for h in homes)
     return (
-        "ls -1 /home 2>&1; "
-        f"if [ -e {quoted} ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi"
+        "ls -1 /home 2>&1; v=0; "
+        f'for h in {quoted}; do if [ -e "$h" ]; then v=1; echo HOST_HOME_VISIBLE; fi; done; '
+        f'if [ "$v" = 0 ]; then echo NO_HOST_HOME_{len(homes)}; fi'
     )
+
+
+def host_home_is_invisible(transcript: str, homes: list[str]) -> bool:
+    """Mirrors prove.rs: fail closed unless the full check ran and saw nothing."""
+    lines = [line.strip() for line in transcript.splitlines()]
+    if not homes or "HOST_HOME_VISIBLE" in transcript:
+        return False
+    if f"NO_HOST_HOME_{len(homes)}" not in lines:
+        return False
+    names = [Path(h).name for h in homes]
+    return all(name and name not in lines for name in names)
 
 
 BIN = ROOT / "bin"
@@ -338,11 +370,13 @@ def run_prove(mode: str) -> int:
     print(f"BS-00 time_to_userspace_ms={t_init * 1000:.1f}")
     serial_log.write_text(boot_buf)
 
+    homes = resolved_host_homes()
+    home_probe = host_invisibility_probe(homes)
     checks: dict[str, str] = {}
     for cmd in [
         "ls /dev/kvm 2>&1",
         "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS",
-        host_invisibility_probe(),
+        home_probe,
         "uname -a",
     ]:
         assert ctx.proc.stdin is not None
@@ -352,6 +386,9 @@ def run_prove(mode: str) -> int:
         checks[cmd] = chunk
         print(f"=== guest: {cmd} ===")
         print(chunk)
+
+    invisible = host_home_is_invisible(checks[home_probe], homes)
+    print(f"spot_check_host_homes_invisible={invisible} homes={len(homes)}")
 
     vsock_result: dict = {"ok": False}
     vsock_thread = threading.Thread(
