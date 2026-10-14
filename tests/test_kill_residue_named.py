@@ -11,7 +11,7 @@ from kill_residue import list_vmm
 
 def test_dest_read_line_is_not_residue() -> None:
     dest = (
-        "landen 1 bash -c AEGISBOX_PROVE=1 python3 /tmp/kill_residue.py; "
+        "isolation 1 bash -c BOX_LIVE_PROVE=1 python3 /tmp/kill_residue.py; "
         "command -v firecracker; command -v jailer\n"
     )
     assert list_vmm(dest) == []

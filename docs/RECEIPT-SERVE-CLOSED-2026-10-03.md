@@ -39,7 +39,7 @@ Status: Serve-closed measured. Tip-of-record ≠ attestation. Socket authz = uid
 | enable + reboot (T6) | PASS |
 | post-boot active+enabled | PASS |
 | post-boot socket prove | PASS `ok:true` tip `d13ecee8…` |
-| socket 0600 owner landen | PASS |
+| socket 0600 owner isolation | PASS |
 | nobody denied | PASS (T5) |
 | residue firecracker | PASS empty |
 

@@ -17,6 +17,6 @@ Maps each check to a disk instrument. Box-closed uses these; Serve-closed adds t
 | Rollback | `docs/RUNBOOK-CHAIN-VERIFY-FAIL-2026-10-03.md` — no truncate heal |
 | Claim language | SPEAK tip-of-record + require-ancestor; receipt OVERCLAIM fixes |
 | Supply chain / egress | helper `copy_rootfs` + sha pin; career lab does not start Firecracker |
-| Blast radius / canary | one host (`aegisbox`); Serve/enforce separate gates |
+| Blast radius / canary | one host (`<box-host>`); Serve/enforce separate gates |
 | Runbook | verify-fail runbook above |
 | Cross-surface parity | `scripts/boxclosed-parity.sh` (git/helper/tip/SPEAK/receipt) |

@@ -64,7 +64,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    if os.environ.get("AEGISBOX_PROVE") != "1" and not sys.argv[1:]:
-        print("KILL_RESIDUE HOLD: set AEGISBOX_PROVE=1 on aegisbox after b1-prove")
+    if os.environ.get("BOX_LIVE_PROVE") != "1" and not sys.argv[1:]:
+        print("KILL_RESIDUE HOLD: set BOX_LIVE_PROVE=1 on the box after b1-prove")
         raise SystemExit(3)
     raise SystemExit(main())

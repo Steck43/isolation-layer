@@ -1,7 +1,7 @@
 """Host entry for one tool call into the box.
 
-CI (AEGISBOX_PROVE unset) clears the three-object boundary without booting the
-jailer. With AEGISBOX_PROVE=1 on aegisbox, run() invokes isolation-manager prove
+CI (BOX_LIVE_PROVE unset) clears the three-object boundary without booting the
+jailer. With BOX_LIVE_PROVE=1 on the box, run() invokes isolation-manager prove
 under the caller tool_call_id (no skill:tool:path invent). always_invoked stays
 false.
 """
@@ -258,7 +258,7 @@ def run(
 ) -> dict[str, Any] | None:
     """Emit a prove-shaped receipt bound to this call.
 
-    When AEGISBOX_PROVE=1, boot live prove under the caller tool_call_id.
+    When BOX_LIVE_PROVE=1, boot live prove under the caller tool_call_id.
     Otherwise emit the CI-shaped contract receipt (does not boot the jailer).
     """
     if getattr(atoms_result, "block_message", None) is not None:
@@ -272,7 +272,7 @@ def run(
     atoms_sha = _atoms_result_sha256(atoms_result)
     content_hash = _sha256_text(content)
     seen: set[str] = set()
-    live = os.environ.get("AEGISBOX_PROVE") == "1"
+    live = os.environ.get("BOX_LIVE_PROVE") == "1"
 
     if live:
         if not tool_call_id:

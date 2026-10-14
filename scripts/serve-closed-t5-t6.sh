@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Landen one-shot: Serve-closed T5 (start, no enable) + T6 (enable, reboot, receipt fill).
-# Run on aegisbox: bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh
+# Run on the box: bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh
 # Requires interactive sudo (unit install / systemctl). Jailer NOPASSWD alone is not enough.
 set -euo pipefail
 cd "$HOME/isolation-layer"
@@ -30,7 +30,7 @@ EOF
 sudo install -o root -g root -m 0644 /tmp/continuity.conf \
   /etc/systemd/system/isolation-manager.service.d/continuity.conf
 sudo systemctl daemon-reload
-# is-enabled exits 1 when disabled — do not trip set -e
+# is-enabled exits 1 when disabled, do not trip set -e
 en=$(systemctl is-enabled isolation-manager.service 2>&1 || true)
 echo SYS_EN=$en
 test "$en" = "disabled"
@@ -47,8 +47,8 @@ sudo -u nobody python3 - <<'PY' || true
 import socket
 s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
-    s.connect("/home/landen/.local/state/aegis/isolation-manager.sock")
-    raise SystemExit("nobody connected — fail")
+    s.connect("/var/lib/isolation-manager/isolation-manager.sock")
+    raise SystemExit("nobody connected, fail")
 except Exception as e:
     print("NOBODY_DENIED", type(e).__name__)
 PY
@@ -75,7 +75,7 @@ echo T5_OK
 
 echo "=== T5 complete (unit started, not enabled) ==="
 echo "For T6 enable+reboot, run with SERVE_ENABLE=1:"
-echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh"
+echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh"
 if [[ "${SERVE_ENABLE:-}" == "1" ]]; then
   sudo systemctl enable isolation-manager.service
   en2=$(systemctl is-enabled isolation-manager.service 2>&1 || true)

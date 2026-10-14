@@ -1,4 +1,4 @@
-"""Step 12: box_entry.run boots live prove under AEGISBOX_PROVE=1.
+"""Step 12: box_entry.run boots live prove under BOX_LIVE_PROVE=1.
 
 Failing first until run threads a caller tool_call_id (no skill:tool:path invent
 on the live path) and invokes isolation-manager prove on that id.
@@ -50,9 +50,9 @@ def _atoms(ticket: str = "ticket-step12") -> SimpleNamespace:
 def test_live_prove_path_requires_caller_tool_call_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Under AEGISBOX_PROVE=1, inventing skill:tool:path is a refuse."""
+    """Under BOX_LIVE_PROVE=1, inventing skill:tool:path is a refuse."""
     mod = _load()
-    monkeypatch.setenv("AEGISBOX_PROVE", "1")
+    monkeypatch.setenv("BOX_LIVE_PROVE", "1")
     out = mod.run(
         atoms_result=_atoms(),
         decision=_decision(),
@@ -66,9 +66,9 @@ def test_live_prove_path_requires_caller_tool_call_id(
 def test_live_prove_path_threads_caller_id_and_invokes_prove(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail until AEGISBOX_PROVE=1 calls prove with the caller tool_call_id."""
+    """Fail until BOX_LIVE_PROVE=1 calls prove with the caller tool_call_id."""
     mod = _load()
-    monkeypatch.setenv("AEGISBOX_PROVE", "1")
+    monkeypatch.setenv("BOX_LIVE_PROVE", "1")
     call_id = "step12-unit-20261010T000000Z"
     seen: list[str] = []
 
@@ -104,7 +104,7 @@ def test_live_prove_path_threads_caller_id_and_invokes_prove(
         }
 
     assert hasattr(mod, "invoke_live_prove"), (
-        "box_entry must expose invoke_live_prove for the AEGISBOX_PROVE=1 path"
+        "box_entry must expose invoke_live_prove for the BOX_LIVE_PROVE=1 path"
     )
     monkeypatch.setattr(mod, "invoke_live_prove", fake_prove)
 
@@ -126,9 +126,9 @@ def test_live_prove_path_threads_caller_id_and_invokes_prove(
 def test_ci_path_still_emits_contract_receipt_without_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unset AEGISBOX_PROVE keeps the CI-shaped receipt (Step 8 contract)."""
+    """Unset BOX_LIVE_PROVE keeps the CI-shaped receipt (Step 8 contract)."""
     mod = _load()
-    monkeypatch.delenv("AEGISBOX_PROVE", raising=False)
+    monkeypatch.delenv("BOX_LIVE_PROVE", raising=False)
     out = mod.run(
         atoms_result=_atoms(),
         decision=_decision(skill="notes"),
@@ -144,7 +144,7 @@ def test_ci_path_still_emits_contract_receipt_without_env(
 def test_live_path_still_denies_wrong_call_id(monkeypatch: pytest.MonkeyPatch) -> None:
     """Step 8 wrong-id deny holds when prove returns a different tool_call_id."""
     mod = _load()
-    monkeypatch.setenv("AEGISBOX_PROVE", "1")
+    monkeypatch.setenv("BOX_LIVE_PROVE", "1")
 
     def fake_prove(
         *, tool_call_id: str, gate_decision_sha256: str, atoms_result_sha256: str

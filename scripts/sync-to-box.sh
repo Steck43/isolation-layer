@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Private sync Windows tree -> aegisbox (no public push).
+# Private sync Windows tree -> the box (no public push).
 # Hyper-V Default Switch DHCP moves on save/close. Prefer Tailscale host, then
-# mshome, then a one-shot IP: AEGISBOX_HOST=landen@100.72.168.92
+# mshome, then a one-shot IP: BOX_SSH_TARGET=user@host
 set -euo pipefail
-SRC="${1:-/mnt/c/Users/lande/Engineering_and_Development/isolation-layer}"
-HOST="${AEGISBOX_HOST:-landen@100.72.168.92}"
+SRC="${1:-${ISOLATION_SRC:?set ISOLATION_SRC}}"
+HOST="${BOX_SSH_TARGET:?set BOX_SSH_TARGET}"
 cd "$SRC"
 tar --exclude='.git' --exclude='target' --exclude='artifacts' -czf - . \
   | ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'mkdir -p "$HOME/isolation-layer" && tar -C "$HOME/isolation-layer" -xzf -'
@@ -25,7 +25,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'cd "$HOME/isolation-layer" &&
   crates/isolation-manager/src/prove.rs \
   crates/isolation-manager/src/serve.rs \
   scripts/run-spine1-prove.sh \
-  scripts/guest-gone-probe.sh' > /tmp/aegisbox-source.sha256
+  scripts/guest-gone-probe.sh' > /tmp/box-source.sha256
 python3 - <<'PY'
 from pathlib import Path
 def names(path):
@@ -37,7 +37,7 @@ def names(path):
         out[Path(p.strip()).name] = h
     return out
 wm = names("/tmp/win-box-source.sha256")
-bm = names("/tmp/aegisbox-source.sha256")
+bm = names("/tmp/box-source.sha256")
 bad = [(k, wm.get(k), bm.get(k)) for k in sorted(set(wm) | set(bm)) if wm.get(k) != bm.get(k)]
 if bad:
     print("SHA_MISMATCH")

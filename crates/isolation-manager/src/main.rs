@@ -44,7 +44,7 @@ pub enum Commands {
 #[derive(Debug, Parser)]
 pub struct ServeArgs {
     /// Unix socket path (mode 0600 after bind).
-    #[arg(long, default_value = "/home/landen/.local/state/aegis/isolation-manager.sock")]
+    #[arg(long, default_value = "/var/lib/isolation-manager/isolation-manager.sock")]
     pub socket: PathBuf,
 }
 

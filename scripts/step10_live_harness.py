@@ -1,7 +1,7 @@
 """Step 10: one call id through gate, atoms, then live prove args.
 
 Digests are taken from a real Gate.evaluate and evaluate_tool_call result.
-When prove=True, isolation-manager prove runs on this host (aegisbox) and the
+When prove=True, isolation-manager prove runs on this host (the box) and the
 receipt must echo those digests. always_invoked stays false.
 """
 
