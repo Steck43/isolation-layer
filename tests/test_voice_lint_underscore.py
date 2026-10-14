@@ -71,3 +71,54 @@ def test_the_verb_sense_is_still_ai_vocabulary(text: str) -> None:
 def test_other_ai_vocabulary_is_unchanged() -> None:
     hits = voice.scan_text("t", "We delve into a pivotal tapestry.", fail_on_warn=True)
     assert sum("AI-VOCAB" in h for h in hits) == 3
+
+
+# Every form of the word is AI vocabulary in any use, not only when an
+# emphasised object follows. Only the noun naming the _ character passes.
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("It underscores security.", id="underscores-bare-noun"),
+        pytest.param("We underscore it twice.", id="underscore-pronoun"),
+        pytest.param(
+            "The risk was underscored by the review.", id="underscored-passive"
+        ),
+        pytest.param("Underscoring trust, the team shipped.", id="underscoring-bare"),
+        pytest.param("That is what it underscores.", id="underscores-final"),
+        pytest.param(
+            "Reviewers underscore risks daily.", id="underscore-plural-object"
+        ),
+        pytest.param("An underscored warning followed.", id="underscored-adjective"),
+        pytest.param("They kept underscoring it.", id="underscoring-pronoun"),
+        pytest.param('It "underscored" the risk.', id="underscored-quoted"),
+    ],
+)
+def test_every_form_of_the_word_is_ai_vocabulary(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+# The commit message that introduced the character-name reading must itself
+# pass, since the commit scan reads every message on the branch.
+CHARACTER_NAME_COMMIT = (
+    "Read underscore as the character name in the voice lint\n\n"
+    'The word list flagged "underscore" wherever it appeared, including where it\n'
+    "names the _ character."
+)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(CHARACTER_NAME_COMMIT, id="character-name-commit"),
+        pytest.param("Split on the underscore (`_`).", id="code-span-glyph"),
+        pytest.param("Split on an underscore (_).", id="bare-glyph"),
+        pytest.param("Names hold letters, digits and underscores.", id="list-tail"),
+        pytest.param("A double underscore marks a private name.", id="double"),
+        pytest.param("Keys drop trailing underscores.", id="trailing-plural"),
+        pytest.param("The underscores in a name are kept.", id="the-plural"),
+        pytest.param("Use underscores between words.", id="plural-between"),
+        pytest.param("A dash or underscore splits the host.", id="list-or"),
+    ],
+)
+def test_the_character_name_in_more_shapes_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
