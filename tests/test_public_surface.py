@@ -304,6 +304,29 @@ ENCODINGS = {
 }
 
 
+def _percent(s: str) -> str:
+    return "".join(f"%{b:02X}" for b in s.encode())
+
+
+# Encodings nested inside one another; each layer must be undone in turn.
+ENCODINGS.update(
+    {
+        "base64-then-percent": lambda s: _percent(
+            base64.b64encode(s.encode()).decode()
+        ).encode(),
+        "base64-then-unicode-escape": lambda s: "".join(
+            BS + f"u{ord(c):04x}" for c in base64.b64encode(s.encode()).decode()
+        ).encode(),
+        "hex-then-html-entity": lambda s: "".join(
+            f"&#x{ord(c):x};" for c in s.encode().hex()
+        ).encode(),
+        "percent-then-fullwidth-then-escape": lambda s: "".join(
+            BS + f"u{ord(c) + 0xFEE0:04x}" for c in _percent(s)
+        ).encode(),
+    }
+)
+
+
 @pytest.mark.parametrize("encoding", sorted(ENCODINGS))
 @pytest.mark.parametrize(("rule", "text"), RULE_PARAMS)
 def test_built_in_rules_see_through_every_encoding(
@@ -398,6 +421,9 @@ HOST_SHAPES = {
     "split-space": FAKE[:5] + " " + FAKE[5:],
     "split-three": FAKE[:3] + " " + FAKE[3:6] + " " + FAKE[6:],
     "split-dash-three": FAKE[:3] + "-" + FAKE[3:6] + "-" + FAKE[6:],
+    "split-dash-glued": "pre" + FAKE[:5] + "-" + FAKE[5:] + "prove",
+    "split-underscore-glued": "PRE" + FAKE[:5].upper() + "_" + FAKE[5:].upper() + "X",
+    "split-dot-glued": "pre" + FAKE[:5] + DOT + FAKE[5:] + "prove",
     "dns-name": FAKE + DOT + "example" + DOT + "net",
     "file-name": "scripts" + SL + "sync-to-" + FAKE + DOT + "sh",
 }

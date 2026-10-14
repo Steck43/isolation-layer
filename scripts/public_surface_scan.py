@@ -400,8 +400,7 @@ def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[st
             forms += more
             joined += more_joined
             obfuscated += more_obfuscated
-    norm = [normalise(f) for f in forms]
-    return norm + forms, [normalise(f) for f in joined], obfuscated
+    return forms, [normalise(f) for f in joined], obfuscated
 
 
 def views_for(data: bytes) -> Views:
