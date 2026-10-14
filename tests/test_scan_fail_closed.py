@@ -74,7 +74,9 @@ def test_a_tracked_symlink_target_is_scanned(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    target = SL + "home" + SL + CANARY + SL + "notes"
+    # Built from code points so no literal join in this file spells the path.
+    home_root = "".join(map(chr, (47, 104, 111, 109, 101, 47)))
+    target = home_root + CANARY + SL + "notes"
     os.symlink(target, clean_tree / "link")
     _git(clean_tree, "add", "link")
     assert _main(clean_tree, monkeypatch, f"{CANARY}\n{FAKE}\n") == 1

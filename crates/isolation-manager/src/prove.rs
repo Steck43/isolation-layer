@@ -738,9 +738,11 @@ mod home_probe_tests {
         HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS,
     };
 
+    const MANAGER_HOME: &str = "/var/lib/isolation-manager";
+
     #[test]
     fn probe_lists_guest_home_and_the_resolved_manager_home() {
-        let home = "/var/lib/isolation-manager";
+        let home = MANAGER_HOME;
         let probe = host_invisibility_probe(home);
         assert!(probe.contains("ls -1 /home"));
         assert!(probe.contains(home));
@@ -752,7 +754,7 @@ mod home_probe_tests {
     // a marker the verdict reads.
     #[test]
     fn typed_probes_never_contain_a_plain_marker() {
-        let typed = [host_invisibility_probe("/var/lib/isolation-manager"), vmm_probe()];
+        let typed = [host_invisibility_probe(MANAGER_HOME), vmm_probe()];
         for text in &typed {
             for marker in [HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS] {
                 assert!(!text.contains(marker), "{marker} in {text}");

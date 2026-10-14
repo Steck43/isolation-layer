@@ -97,7 +97,7 @@ def test_spot_checks_use_the_whole_line_rule() -> None:
     checks = {
         "kvm": "root@ubuntu-fc-uvm:~# ls /dev/kvm 2>&1\nls: cannot access '/dev/kvm': No such file or directory\n",
         "vmm": ECHO_VMM,
-        "home": f"{ECHO_PROBE}ubuntu\nNO_HOST_HOME\n",
+        "guest_home": f"{ECHO_PROBE}ubuntu\nNO_HOST_HOME\n",
     }
     assert b1.spot_checks(checks, HOME) == {
         "kvm_absent": True,
@@ -105,5 +105,5 @@ def test_spot_checks_use_the_whole_line_rule() -> None:
     }
     checks["vmm"] = f"{ECHO_VMM}NO_VMM_PROCS\n"
     assert b1.spot_checks(checks, HOME)["host_invisible"] is True
-    checks["home"] = f"{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n"
+    checks["guest_home"] = f"{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n"
     assert b1.spot_checks(checks, HOME)["host_invisible"] is False

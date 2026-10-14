@@ -78,11 +78,11 @@ def host_home_is_invisible(transcript: str, home: str) -> bool:
 
 
 def spot_checks(checks: dict[str, str], home: str) -> dict[str, bool]:
-    """Verdicts from the guest transcripts keyed kvm, vmm and home."""
+    """Verdicts from the guest transcripts keyed kvm, vmm and guest_home."""
     return {
         "kvm_absent": "cannot access '/dev/kvm'" in checks["kvm"],
         "host_invisible": no_vmm_procs(checks["vmm"])
-        and host_home_is_invisible(checks["home"], home),
+        and host_home_is_invisible(checks["guest_home"], home),
     }
 
 
@@ -400,7 +400,7 @@ def run_prove(mode: str) -> int:
     for key, cmd in [
         ("kvm", "ls /dev/kvm 2>&1"),
         ("vmm", vmm_probe()),
-        ("home", host_invisibility_probe()),
+        ("guest_home", host_invisibility_probe()),
         ("uname", "uname -a"),
     ]:
         assert ctx.proc.stdin is not None
