@@ -107,7 +107,14 @@ _ESC = re.compile(
 _SIMPLE_ESC = {"n": "\n", "t": "\t", "r": "\r"}
 _CONTINUATION = re.compile(r"[\"']\s*\\?\r?\n\s*[\"']|\\\r?\n\s*")
 _SVG_GEOMETRY = re.compile(r'\b(?:d|points|viewBox|transform)="[^"]*"')
-_BASE_ONLY = {"email", "user-at-host", "private-ipv4", "private-ipv6"}
+_BASE_ONLY = {
+    "email",
+    "user-at-host",
+    "private-ipv4",
+    "private-ipv6",
+    "host-dns-name",
+    "trust-domain",
+}
 _TOKEN = re.compile(r"[A-Za-z0-9]+")
 _COMPOUND = re.compile(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*")
 
@@ -133,6 +140,21 @@ RULES: dict[str, re.Pattern[str]] = {
     ),
     "user-at-host": re.compile(
         r"(?<![\w.@/+\\-])[A-Za-z_][A-Za-z0-9_-]*@[A-Za-z][A-Za-z0-9-]*(?![\w.@-])"
+    ),
+    # A name under a suffix that only resolves on one host or one private
+    # network (Hyper-V, mDNS, home routers, tailnets).
+    "host-dns-name": re.compile(
+        r"(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\."
+        r"(?:mshome\.net|local|lan|home\.arpa|internal|localdomain|intranet|ts\.net)"
+        r"(?![\w-])",
+        re.IGNORECASE,
+    ),
+    # A SPIFFE trust domain other than a reserved placeholder or a template.
+    "trust-domain": re.compile(
+        r"(?:spiffe://|trust_domain\s*[=:]\s*[\"'])"
+        r"(?!\{|(?:[\w-]+\.)*(?:invalid|test|example)(?![\w.-])|example\.(?:org|com|net)(?![\w.-]))"
+        r"[A-Za-z0-9][A-Za-z0-9.-]*",
+        re.IGNORECASE,
     ),
 }
 _EMAIL_OK = re.compile(

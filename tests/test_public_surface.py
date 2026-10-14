@@ -229,6 +229,18 @@ RULE_CASES = {
     ],
     "email": [NAME + AT + r("pbecbengr") + DOT + r("pbz")],
     "user-at-host": [NAME + AT + r("jbexfgngvba"), "root" + AT + r("fubc")],
+    "host-dns-name": [
+        NAME + DOT + r("zfubzr") + DOT + r("arg"),
+        NAME + DOT + r("ybpny"),
+        NAME + DOT + r("yna"),
+        NAME + DOT + r("ubzr") + DOT + r("necn"),
+        NAME + DOT + r("vagreany"),
+        NAME + "-01" + DOT + r("gnvy") + "123" + DOT + r("gf") + DOT + r("arg"),
+    ],
+    "trust-domain": [
+        r("fcvssr") + COLON + SL * 2 + NAME + DOT + r("pbec") + SL + "x",
+        "trust_domain = " + chr(34) + NAME + DOT + r("bet") + chr(34),
+    ],
 }
 RULE_PARAMS = [
     pytest.param(rule, text, id=f"{rule}-{i}")
@@ -331,6 +343,25 @@ def test_every_built_in_rule_has_cases() -> None:
         pytest.param(SL + HOME + SL + "<user>", id="angle-placeholder"),
         pytest.param(SL + HOME + SL + "NO_HOST_HOME", id="upper-case-marker"),
         pytest.param("user" + AT + "1000" + DOT + "service", id="systemd-user-unit"),
+        pytest.param(
+            "~" + SL + DOT + r("ybpny") + SL + "state" + SL + "x", id="xdg-local-dir"
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "box" + DOT + "invalid" + SL + "x",
+            id="reserved-trust-domain",
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "example" + DOT + "org" + SL + "x",
+            id="example-trust-domain",
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "{TRUST_DOMAIN}" + SL + "x",
+            id="templated-trust-domain",
+        ),
+        pytest.param(
+            "trust_domain = " + chr(34) + "{TRUST_DOMAIN}" + chr(34),
+            id="templated-trust-domain-key",
+        ),
     ],
 )
 def test_built_in_rules_leave_generic_text_alone(text: str) -> None:

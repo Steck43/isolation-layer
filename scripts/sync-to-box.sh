@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Private sync Windows tree -> the box (no public push).
-# Hyper-V Default Switch DHCP moves on save/close. Prefer Tailscale host, then
-# mshome, then a one-shot IP: BOX_SSH_TARGET=user@host
+# The box address is operator configuration: BOX_SSH_TARGET=user@host
 set -euo pipefail
 SRC="${1:-${ISOLATION_SRC:?set ISOLATION_SRC}}"
 HOST="${BOX_SSH_TARGET:?set BOX_SSH_TARGET}"
