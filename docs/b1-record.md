@@ -1,6 +1,6 @@
 # B1 Record — Firecracker toolchain and first microVM boot
 
-Host: `aegis-box` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec: `isolation-layer-build-spec-v1.5.md`.
+Host: `<box-host>` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec: `isolation-layer-build-spec-v1.5.md`.
 
 ## 1. Substrate confirmation
 
@@ -108,7 +108,7 @@ NO_HOST_HOME
 
 ## 5. BS-00 boot baseline (nested Hyper-V host)
 
-Measured on `aegis-box` (L1 Firecracker guest under Hyper-V), cold boot, no snapshot:
+Measured on `<box-host>` (L1 Firecracker guest under Hyper-V), cold boot, no snapshot:
 
 | Metric | Direct (`b1-direct-1783643482`) | Jailed (`b1-jailed-1783644322`) |
 |---|---|---|

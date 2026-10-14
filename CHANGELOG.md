@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Step 12: `scripts/box_entry.py` `run` accepts `tool_call_id` and, when `AEGISBOX_PROVE=1`, boots live `isolation-manager prove` under that id (no `skill:tool:path` invent). Unset env keeps the CI-shaped contract receipt. Fake, replay, and wrong-call-id denials still run through `accept_bound_receipt`. `tests/test_step12_box_entry_live.py` pins both paths. `always_invoked` stays false.
-- `receipts/STEP-10b-2026-10-09.md`: re-prove of the Step 10 live harness on a clean isolation `main` tip (`9cdf7ee`) on aegisbox after the scaffold checkout was moved aside (call id `step10b-20261010T025228Z`). Host HEAD and `git status` are named on the receipt. `always_invoked` stays false.
-- `scripts/step10_live_harness.py` runs one write through real `Gate.evaluate` and `evaluate_tool_call`, seals gate and atoms digests through `box_entry`, and can feed those digests into live `isolation-manager prove` on aegisbox. `tests/test_step10_live_e2e.py` fails first until those digests match recomputation. `receipts/STEP-10-2026-10-09.md` records the live call (`step10-20261010T010139Z`). `always_invoked` stays false.
+- Step 12: `scripts/box_entry.py` `run` accepts `tool_call_id` and, when `BOX_LIVE_PROVE=1`, boots live `isolation-manager prove` under that id (no `skill:tool:path` invent). Unset env keeps the CI-shaped contract receipt. Fake, replay, and wrong-call-id denials still run through `accept_bound_receipt`. `tests/test_step12_box_entry_live.py` pins both paths. `always_invoked` stays false.
+- `receipts/STEP-10b-2026-10-09.md`: re-prove of the Step 10 live harness on a clean isolation `main` tip (`9cdf7ee`) on the box after the scaffold checkout was moved aside (call id `step10b-20261010T025228Z`). Host HEAD and `git status` are named on the receipt. `always_invoked` stays false.
+- `scripts/step10_live_harness.py` runs one write through real `Gate.evaluate` and `evaluate_tool_call`, seals gate and atoms digests through `box_entry`, and can feed those digests into live `isolation-manager prove` on the box. `tests/test_step10_live_e2e.py` fails first until those digests match recomputation. `receipts/STEP-10-2026-10-09.md` records the live call (`step10-20261010T010139Z`). `always_invoked` stays false.
 - `receipts/INVENTORY-2026-10-09.md` records box and judge state (BUILT / TESTED / LIVE-PROVEN) before Step 10 wiring. `always_invoked` stays false.
-- `receipts/STEP-9b-2026-10-09.md`: live jailer prove on aegisbox against `main` tip `395319e` with call-bound digests.
+- `receipts/STEP-9b-2026-10-09.md`: live jailer prove on the box against `main` tip `395319e` with call-bound digests.
 
 ### Fixed
 
@@ -31,9 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Public files no longer embed a host home path. The systemd unit documents an install prefix, the sync script requires a source tree and host, and the guest home probe uses a placeholder. Proof files that changed record the original sha256 and the redacted sha256.
-- The private name list is no longer in the repository in any form. The public-surface test reads it from the `LEAK_DENYLIST` Actions secret, or from `.git/info/leak-denylist` on a local clone, and fails when neither is set. A new test rebuilds every tracked file the ways a reader could (joined string literals, percent, escape, base64, and hex decoding, Unicode normalisation, zero-width removal, reversed, rot13) and fails if any private entry is recoverable; on the previous head it found all 13 entries in the test file's split strings. Hits print as entry numbers, never names. A CI step prints the scanned file and entry counts and fails on zero. The earlier commit that held the list stays in history (fix-forward).
-- Public files no longer carry a host home, a host address, or a recoverable private-name list. The surface scan stores only hashes. The guest home check uses the manager home resolved at runtime. The manager unit runs as `isolation` with home protected. Raw receipts under `receipts/raw/` keep the bytes they were hashed as.
+- Public files no longer carry a host home path, a host address, a personal email, the box host name, or the private name list in any recoverable form. `scripts/public_surface_scan.py` (standard library only) scans every tracked file and file name in every encoding (UTF-8, UTF-16 and UTF-32 at every alignment, binary with NUL bytes), after decoding (percent, escapes, HTML entities, base64, hex), normalising (NFKC, zero-width and look-alike letters), and rejoining split strings and continued lines. Built-in rules cover home paths, WSL network paths, private IPv4 and IPv6 ranges, emails, user@host names, and the box host name (by hash). The private list is never stored here: CI passes it as the `LEAK_DENYLIST` secret, which must hold the expected number of entries plus a canary that has to be found in all 24 planted forms. Hits print the rule and entry number, never the term, and a file name that carries a term prints as its index. The CI `public-surface` job loads the scanner from the base branch into a temp folder, installs nothing, is the only step that gets the secret, and fails closed when the base has no scanner or the secret is missing. The box host name and its trust domain left the tree: `BOX_LIVE_PROVE` and `BOX_SSH_TARGET` replace the old variable names, `scripts/sync-to-box.sh` replaces the old script, and the SPIRE issuer takes `BOX_HOSTNAME` (refuses when unset) and `BOX_TRUST_DOMAIN` (default `box.invalid`). The raw Step 12b receipt keeps its produced CRLF line endings, and its redacted digest is re-recorded. The guest home check uses the manager home resolved at runtime, and the manager unit runs as `isolation`.
 - README Figure 1 is the dest-true SVG. The box sits between floor and judge. Mermaid stays the sketch.
 - README drops identity-as-horizon. The four planes take identity as an argument. This roof stays the box.
 
@@ -43,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/kill_residue.py` fails if a Firecracker guest or VMM is still up after teardown. Anderson row 2. Not a boot. A dest-read command line that names those binaries is not residue.
 - `scripts/dropbox_hash_guard.py` hashes host-held body bytes and rejects path escape. Time Chamber is not the door. `always_invoked` stays false.
 - `cargo test --workspace` in floor CI. README names the MIT LICENSE versus Cargo Apache-2.0 split.
-- LOOP-006 four named rows (`tests/test_loop006_named.py`). Each skips without `AEGISBOX_PROVE`. Boot/kill is not this suite.
+- LOOP-006 four named rows (`tests/test_loop006_named.py`). Each skips without `BOX_LIVE_PROVE`. Boot/kill is not this suite.
 - CITATION.cff and `.zenodo.json` so a later tag can mint. No DOI on this record yet.
 - Isolation-manager `read` verb: allowlisted host-path read under observe. Receipts keep `always_invoked_claim` false.
 - Repo floor: GitHub Actions (secrets, authorship, tests 3.11/3.12, ruff, craft, zizmor/actionlint), Dependabot 7-day cooldown, SECURITY.md.

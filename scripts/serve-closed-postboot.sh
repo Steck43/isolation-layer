@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run on aegisbox after serve-closed-t5-t6.sh reboot.
+# Run on the box after serve-closed-t5-t6.sh reboot.
 set -euo pipefail
 cd "$HOME/isolation-layer"
 CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"

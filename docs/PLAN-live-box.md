@@ -23,7 +23,7 @@ Can Landen boot a jailed Firecracker microVM from a command he can repeat, leave
 
 # ATTACK
 
-On **aegisbox** (not WSL): dest-read `/dev/kvm` and `/dev/vhost-vsock`, then `cargo run -p isolation-manager -- prove` after operator install per `deploy/INSTALL.md`. Path already on disk: `scripts/b1-prove.py`, `docs/b1-record.md`, `docs/b2-record.md`.
+On **the box** (not WSL): dest-read `/dev/kvm` and `/dev/vhost-vsock`, then `cargo run -p isolation-manager -- prove` after operator install per `deploy/INSTALL.md`. Path already on disk: `scripts/b1-prove.py`, `docs/b1-record.md`, `docs/b2-record.md`.
 
 # SCALE
 
@@ -35,7 +35,7 @@ Gate: scheduled workstreams with receipts. Walks: talk tracks after dest-read pr
 
 # Done
 
-- `isolation-manager prove` exit 0 on aegisbox this sitting (or a dated receipt that dest-reads a failed closed prove).
+- `isolation-manager prove` exit 0 on the box this sitting (or a dated receipt that dest-reads a failed closed prove).
 - Host decision jsonl verifies; tamper fails.
 - Vestibule reject log append-only.
 - systemd unit: manager up, no idle guest.
@@ -55,7 +55,7 @@ Claim 125 ms. Claim maximum isolation under nested Hyper-V. Claim the career Pyt
 
 `Job_Search/prep/agent-security-lab` is a stdlib, no-network, claim-safe sprint. Isolation there is a **label** so scores stay reproducible on any PC. That protected interviews. It did not teach the box.
 
-The box already lives here: Rust workspace, B1 boot RECORD on aegisbox, B2 manager + jailer-launch, B3 vestibule listener + reject jsonl. Today's WSL session (`<dev-host>`) has `/dev/kvm` and **no** `firecracker` binary. Spec v1.5: WSL2 kernel has no `CONFIG_VHOST_VSOCK`; dedicated Linux VM is the substrate.
+The box already lives here: Rust workspace, B1 boot RECORD on the box, B2 manager + jailer-launch, B3 vestibule listener + reject jsonl. Today's WSL session (`<dev-host>`) has `/dev/kvm` and **no** `firecracker` binary. Spec v1.5: WSL2 kernel has no `CONFIG_VHOST_VSOCK`; dedicated Linux VM is the substrate.
 
 ---
 
@@ -63,7 +63,7 @@ The box already lives here: Rust workspace, B1 boot RECORD on aegisbox, B2 manag
 
 ```
 Windows host
-  -> aegisbox (Linux VM, Firecracker is L1)
+  -> the box (Linux VM, Firecracker is L1)
        -> isolation-manager (unprivileged, long-lived)
             -> sudo jailer-launch (scoped, root-owned helper)
                  -> jailer -> firecracker v1.16.1
@@ -89,7 +89,7 @@ CISO sentence: the record is kept because boxes boot and die, not because we wro
 
 # Operator vs agent
 
-**Landen (privilege):** boot aegisbox; confirm kvm + vhost-vsock + kvm group; `sudo scripts/install-firecracker.sh`; `scripts/fetch-golden-image.sh` if artifacts missing; `sudo install` jailer-launch + sudoers (`deploy/INSTALL.md`); `visudo -cf`; first `isolation-manager prove`; enable systemd once the unit exists.
+**Landen (privilege):** boot the box; confirm kvm + vhost-vsock + kvm group; `sudo scripts/install-firecracker.sh`; `scripts/fetch-golden-image.sh` if artifacts missing; `sudo install` jailer-launch + sudoers (`deploy/INSTALL.md`); `visudo -cf`; first `isolation-manager prove`; enable systemd once the unit exists.
 
 **Agent:** tests, chain module, manager append, unit file **content**, PLAN/receipts. Never sudo. Never retune Job_Search 16/16.
 
@@ -102,17 +102,17 @@ CISO sentence: the record is kept because boxes boot and die, not because we wro
 | Rust unit | `cargo test -p aegis-common -p jailer-launch -p vestibule` | no root |
 | Chain | append two rows; tamper fails | |
 | Fail closed | prove without helper/kvm logs fail row; process does not hang | |
-| Live | `cargo run -p isolation-manager -- prove` on aegisbox | dest-read json |
+| Live | `cargo run -p isolation-manager -- prove` on the box | dest-read json |
 | Listener | off-schema grows reject log; `--disabled` is the negative control | |
 | Service | unit starts; `prove` via socket; guest gone after; chain grew | |
 
-Live prove is on aegisbox. Tests without kvm skip or fail closed, never skip-and-claim-green.
+Live prove is on the box. Tests without kvm skip or fail closed, never skip-and-claim-green.
 
 ---
 
 # Workstreams (do in this order)
 
-1. **Substrate dest-read** — aegisbox: kvm, vhost-vsock, `firecracker --version`, artifacts under `artifacts/x86_64`. Write `docs/RECEIPT-SUBSTRATE-<date>.md`. If aegisbox is down, stop; do not install on WSL as the vsock path.
+1. **Substrate dest-read**: the box: kvm, vhost-vsock, `firecracker --version`, artifacts under `artifacts/x86_64`. Write `docs/RECEIPT-SUBSTRATE-<date>.md`. If the box is down, stop; do not install on WSL as the vsock path.
 
 2. **Operator install** — INSTALL.md + install-firecracker.sh. Agent waits.
 

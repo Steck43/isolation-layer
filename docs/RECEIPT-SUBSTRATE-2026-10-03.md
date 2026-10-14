@@ -9,19 +9,19 @@ Does **not** unlock SPEAK (ATTACK key is prove exit 0).
 
 | Check | Host | Result |
 |---|---|---|
-| hostname | SSH `user@box` | `aegisbox` |
-| `/dev/kvm` | aegisbox | present `crw-rw----+` root:kvm |
-| `/dev/vhost-vsock` | aegisbox | present `crw-rw----` root:kvm |
-| `firecracker --version` | aegisbox | Firecracker v1.16.1 |
-| `jailer --version` | aegisbox | Jailer v1.16.1 |
-| artifacts `~/isolation-layer/artifacts/x86_64` | aegisbox | vmlinux-6.1.176, ubuntu-24.04.ext4, squashfs present |
+| hostname | SSH `user@box` | `<box-host>` |
+| `/dev/kvm` | the box | present `crw-rw----+` root:kvm |
+| `/dev/vhost-vsock` | the box | present `crw-rw----` root:kvm |
+| `firecracker --version` | the box | Firecracker v1.16.1 |
+| `jailer --version` | the box | Jailer v1.16.1 |
+| artifacts `~/isolation-layer/artifacts/x86_64` | the box | vmlinux-6.1.176, ubuntu-24.04.ext4, squashfs present |
 | WSL <dev-host> `/dev/kvm` | WSL | present |
 | WSL `/dev/vhost-vsock` | WSL | **absent** (expected; not substrate) |
 | WSL `firecracker` | WSL | not on PATH this sitting |
 
 ## Verdict
 
-**SUBSTRATE_GREEN** on aegisbox. WSL remains demoted for vsock.
+**SUBSTRATE_GREEN** on the box. WSL remains demoted for vsock.
 
 ## Next
 

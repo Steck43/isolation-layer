@@ -1,6 +1,6 @@
 # B3 Record - Vestibule (host-guest channel)
 
-Host: aegis-box. Branch: scaffold. Spec: isolation-layer-build-spec-v1.5.md §3.1 / BS-04.
+Host: the box. Branch: scaffold. Spec: isolation-layer-build-spec-v1.5.md §3.1 / BS-04.
 
 ## Status
 

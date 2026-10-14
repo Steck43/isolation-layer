@@ -1,6 +1,6 @@
 # B3.1 Record — Dropbox airlock (inert shelf)
 
-Host: aegis-box. Synthesis §7 · `IDEA-CUR-147` · `IDEA-OA2-212`.
+Host: the box. Synthesis §7 · `IDEA-CUR-147` · `IDEA-OA2-212`.
 
 ## Thesis (kept)
 

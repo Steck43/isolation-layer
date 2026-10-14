@@ -3,7 +3,7 @@
 pub const JAILER_BIN: &str = "/usr/local/bin/jailer";
 pub const FIRECRACKER_BIN: &str = "/usr/local/bin/firecracker";
 
-/// Repository root on aegis-box (B1 golden image location).
+/// Repository root on the box (B1 golden image location).
 pub const AEGIS_ROOT: &str = "/opt/aegis/isolation-layer";
 
 pub const ARTIFACTS_DIR: &str = "/opt/aegis/isolation-layer/artifacts/x86_64";

@@ -101,8 +101,8 @@ def test_harness_digests_come_from_real_gate_and_atoms(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    os.environ.get("AEGISBOX_PROVE") != "1",
-    reason="live jailer prove only on aegisbox with AEGISBOX_PROVE=1",
+    os.environ.get("BOX_LIVE_PROVE") != "1",
+    reason="live jailer prove only on the box with BOX_LIVE_PROVE=1",
 )
 def test_live_prove_echoes_harness_digests(tmp_path: Path) -> None:
     gate_root = _sibling("capability-gate")

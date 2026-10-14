@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""SPIRE issuer for aegisbox only. Not a host trust-root.
+"""SPIRE issuer for the box only. Not a host trust-root.
 
-Pinned SPIRE lands in $HOME/spire-box. Any other hostname refuses.
+Pinned SPIRE lands in $HOME/spire-box. The operator names the box with
+BOX_HOSTNAME; with it unset, or on any other hostname, the issuer refuses.
+The trust domain comes from BOX_TRUST_DOMAIN (default box.invalid).
 DPoP mint is self-asserted until an SVID binds it.
 always_invoked stays false.
 """
@@ -21,12 +23,12 @@ import time
 import urllib.request
 from pathlib import Path
 
-REQUIRED_HOST = "aegisbox"
+REQUIRED_HOST = os.environ.get("BOX_HOSTNAME", "").strip().lower()
 VERSION = "1.15.3"
 TARBALL = f"spire-{VERSION}-linux-amd64-musl.tar.gz"
 TARBALL_SHA256 = "ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
 BASE = f"https://github.com/spiffe/spire/releases/download/v{VERSION}"
-TRUST_DOMAIN = "aegisbox.mshome.net"
+TRUST_DOMAIN = os.environ.get("BOX_TRUST_DOMAIN", "").strip() or "box.invalid"
 
 
 def current_host() -> str:
@@ -34,11 +36,13 @@ def current_host() -> str:
 
 
 def on_box() -> bool:
-    return current_host() == REQUIRED_HOST
+    return bool(REQUIRED_HOST) and current_host() == REQUIRED_HOST
 
 
 def require_box() -> None:
     host = current_host()
+    if not REQUIRED_HOST:
+        raise SystemExit("REFUSE: BOX_HOSTNAME is not set")
     if host != REQUIRED_HOST:
         raise SystemExit(f"REFUSE: host {host!r} is not {REQUIRED_HOST}")
     if os.name == "nt":
@@ -148,7 +152,7 @@ def main() -> int:
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--probe", action="store_true")
     ap.add_argument("--mint-dpop", action="store_true")
-    ap.add_argument("--htu", default="spiffe://aegisbox.mshome.net/conflicting")
+    ap.add_argument("--htu", default=f"spiffe://{TRUST_DOMAIN}/conflicting")
     a = ap.parse_args()
     root = dest_dir()
     if a.probe:

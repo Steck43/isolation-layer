@@ -18,7 +18,7 @@ Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 
 | Piece | Path / binary | State |
 |---|---|---|
-| Prove CLI + call bind | `crates/isolation-manager/src/prove.rs` (`bind_call_receipt`) | LIVE-PROVEN (Step 7 on aegisbox; Step 9b pending on this tip) |
+| Prove CLI + call bind | `crates/isolation-manager/src/prove.rs` (`bind_call_receipt`) | LIVE-PROVEN (Step 7 on the box; Step 9b pending on this tip) |
 | Box entry (CI receipt contract) | `scripts/box_entry.py` | TESTED (unit negatives + CG three-receipt); does **not** boot jailer |
 | Decision chain | `crates/aegis-common/src/decision_chain.rs` | TESTED |
 | Jailer argv / no guest NIC | `crates/jailer-launch` (`a5c19c7` on main) | TESTED |
@@ -34,11 +34,11 @@ Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 | Python floor collect | 19 collected |
 | CI floor on main after #27 (`38009764211`) | rust green; pytest 15 passed, 4 skipped |
 
-### Live substrate (aegisbox via Tailscale `<tailnet-host>`)
+### Live substrate (the box via Tailscale `<tailnet-host>`)
 
 | Check | Result |
 |---|---|
-| Host | `aegisbox`; eth0 `<lan-host>`; Tailscale `<tailnet-host>` |
+| Host | `<box-host>`; eth0 `<lan-host>`; Tailscale `<tailnet-host>` |
 | `/dev/kvm` | present, readable |
 | jailer | `/usr/local/bin/jailer` sha256 `1f3a0c1fe862…` |
 | jailer-launch | `/usr/local/bin/jailer-launch` sha256 `2197439fe00b…` |
@@ -100,7 +100,7 @@ State summary: **TESTED** (harness / 10k). Live apply: **STARTED/off** (`judge_a
 
 | Flag | Detail |
 |---|---|
-| Dirty box overlay | aegisbox `~/isolation-layer` git tip `3428975` (scaffold) while some files match `main`; **re-sync from <dev-host> `main` before Step 9b/10** |
+| Dirty box overlay | the box `~/isolation-layer` git tip `3428975` (scaffold) while some files match `main`; **re-sync from <dev-host> `main` before Step 9b/10** |
 | Missing on box | `scripts/box_entry.py` absent until sync |
 | Estate atoms branch | `spine1/atoms-suite` behind/off public `master` default; not the paper tip |
 | Stale local topic branches | Many `keep/*`, `cursor/*`, `cc/*`, `aeg-50/*` unmerged on isolation/atoms/CG — do not treat as tips |
@@ -110,11 +110,11 @@ State summary: **TESTED** (harness / 10k). Live apply: **STARTED/off** (`judge_a
 
 ## Step 10 shape (from this inventory)
 
-Wire **existing** pieces on one live call id on aegisbox after a clean sync of `main` `395319e`:
+Wire **existing** pieces on one live call id on the box after a clean sync of `main` `395319e`:
 
 1. `Gate.evaluate` → decision record + sha256  
 2. `evaluate_tool_call(..., gate_decision=…)` → atoms result + sha256 + `box_ticket`  
-3. Pass those digests into `isolation-manager prove` (or `box_entry` that invokes prove when `AEGISBOX_PROVE=1`)  
+3. Pass those digests into `isolation-manager prove` (or `box_entry` that invokes prove when `BOX_LIVE_PROVE=1`)  
 4. Receipt each layer’s output under the **same** `tool_call_id`  
 5. Judge stays `judge_apply_verdict=false` unless Landen flips apply; inventory does not require judge mutation for the three-object centerpiece  
 

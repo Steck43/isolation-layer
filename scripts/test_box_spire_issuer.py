@@ -16,9 +16,21 @@ def main() -> int:
     if issuer.VERSION != "1.15.3":
         print("FAIL version pin")
         return 1
-    if issuer.TRUST_DOMAIN != "aegisbox.mshome.net":
-        print("FAIL trust domain")
+    if issuer.TRUST_DOMAIN != "box.invalid":
+        print("FAIL trust domain default")
         return 1
+    if issuer.REQUIRED_HOST:
+        print("FAIL required host has a default")
+        return 1
+    try:
+        issuer.require_box()
+        print("FAIL require_box with no BOX_HOSTNAME")
+        return 1
+    except SystemExit as exc:
+        if "BOX_HOSTNAME" not in str(exc):
+            print(f"FAIL unset refuse text {exc}")
+            return 1
+    issuer.REQUIRED_HOST = "the-box"
 
     real_host = issuer.current_host
     issuer.current_host = lambda: "windows-host"

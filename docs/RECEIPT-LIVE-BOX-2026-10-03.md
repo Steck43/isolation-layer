@@ -9,10 +9,10 @@ Claim grade: **Box-closed** (not Serve-closed; not four_plane_complete; not atom
 
 | Item | Value |
 |---|---|
-| Host | `aegisbox` (`/dev/kvm` ok, `/dev/vhost-vsock` ok) |
+| Host | `<box-host>` (`/dev/kvm` ok, `/dev/vhost-vsock` ok) |
 | Topic branch (Windows) | `spine1/live-box` (working tree includes post-interrogate harden; commit pending Landen) |
 | Atoms topic (host) | `spine1/atoms-suite` @ `3528f38b40fd71b1c05f214da00fd558a3b484da` |
-| Private sync | tar Windows → aegisbox working tree (no public push). Box `git HEAD` may lag; file sha256 of load-bearing paths is the sync gate. |
+| Private sync | tar Windows → the box working tree (no public push). Box `git HEAD` may lag; file sha256 of load-bearing paths is the sync gate. |
 | `isolation-manager` release sha256 | `7987ac1c9569849483baeaa616cb2bb8d3a6ab531921ea41085819ee7a74bc47` |
 | `jailer-launch` built sha256 | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` |
 | `jailer-launch` installed `/usr/local/bin` | `2197439fe00be6bf44188e6b776ec49abeb634762ed045894cd50c522db5a9eb` (Landen `sudo install` dest-read; built == installed) |

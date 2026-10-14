@@ -1,6 +1,6 @@
 ---
 name: Serve-closed after merge
-overview: "After topic commits/pushes/merges land, run a falsifiable Serve-closed campaign on aegisbox: freeze identity, re-prove Box continuity, exercise foreground UDS serve, then Landen-gated systemd start/enable/reboot with Codex kill-list greens. Not four_plane. Not atoms enforce."
+overview: "After topic commits/pushes/merges land, run a falsifiable Serve-closed campaign on the box: freeze identity, re-prove Box continuity, exercise foreground UDS serve, then Landen-gated systemd start/enable/reboot with Codex kill-list greens. Not four_plane. Not atoms enforce."
 todos:
   - id: m0-merge
     content: T0 Commit/push/merge freeze; record MERGED_HEAD + binary SHAs
@@ -30,7 +30,7 @@ isProject: false
 
 > **For agentic workers:** Use subagent-driven-development or executing-plans task-by-task. Steps use checkbox tracking.
 
-**Goal:** After `spine1/live-box` (and related topic) commits/pushes/merges land, honestly claim **Serve-closed** on aegisbox with destination evidence, without reopening Box-closed or claiming four_plane / atoms enforce.
+**Goal:** After `spine1/live-box` (and related topic) commits/pushes/merges land, honestly claim **Serve-closed** on the box with destination evidence, without reopening Box-closed or claiming four_plane / atoms enforce.
 
 **Architecture:** Scaffold identity and fail-closed config before any long-lived socket. Foreground UDS prove first (transport), then systemd start-without-enable (sandbox), then Landen-gated enable+reboot. Chain stays tip-anchored (not attested). Inspector stays out of band.
 
@@ -102,9 +102,9 @@ flowchart TD
 
 ### Task 1: Box source identity
 
-**Files:** [`scripts/sync-to-aegisbox.sh`](<repo-root>/scripts/sync-to-aegisbox.sh) expand if tar path kept.
+**Files:** [`scripts/sync-to-box.sh`](<repo-root>/scripts/sync-to-box.sh) expand if tar path kept.
 
-- [ ] **Step 1:** On aegisbox, checkout/sync exact `MERGED_HEAD` (prefer git; tar only if private).
+- [ ] **Step 1:** On the box, checkout/sync exact `MERGED_HEAD` (prefer git; tar only if private).
 - [ ] **Step 2:** `git rev-parse HEAD` host==box OR full load-bearing sha256 manifest zero-diff (include `serve.rs`, unit, Cargo.lock, scripts).
 - [ ] **Step 3:** `cargo test --workspace` + `cargo build --release -p jailer-launch -p isolation-manager` exit 0.
 

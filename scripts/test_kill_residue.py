@@ -20,7 +20,7 @@ def main() -> int:
         print("FAIL clean list")
         return 1
     dest = (
-        "isolation 1 bash -c AEGISBOX_PROVE=1 python3 /tmp/kill_residue.py; "
+        "isolation 1 bash -c BOX_LIVE_PROVE=1 python3 /tmp/kill_residue.py; "
         "command -v firecracker; command -v jailer\n"
     )
     if list_vmm(dest):

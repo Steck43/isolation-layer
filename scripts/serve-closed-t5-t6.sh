@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Landen one-shot: Serve-closed T5 (start, no enable) + T6 (enable, reboot, receipt fill).
-# Run on aegisbox: bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh
+# Run on the box: bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh
 # Requires interactive sudo (unit install / systemctl). Jailer NOPASSWD alone is not enough.
 set -euo pipefail
 cd "$HOME/isolation-layer"

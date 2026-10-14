@@ -3,7 +3,7 @@
 Day: 2026-10-03
 Agent does not sudo. Substrate dest-read: SUBSTRATE_GREEN (`docs/RECEIPT-SUBSTRATE-2026-10-03.md`).
 
-## On aegisbox
+## On the box
 
 ```bash
 cd ~/isolation-layer
