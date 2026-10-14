@@ -919,7 +919,8 @@ def test_installer_creates_the_account_the_unit_runs_as() -> None:
     assert "--shell" in args and args[args.index("--shell") + 1].endswith("nologin")
     # A personal account must never be the service account.
     assert group == user and "--user-group" in args
-    assert f"getent passwd {user}" in flat
+    lookup = re.search(rf"(?m)^getent passwd {user}\s*$", flat)
+    assert lookup and lookup.start() > flat.index("useradd"), "check the account exists"
     first_use = min(
         flat.index(m) for m in (f"-u {user}", "cp deploy/sudoers.d") if m in flat
     )
@@ -993,6 +994,9 @@ PASSWD = "\n".join(
         + "nologin",
         "locked:x:1003:1003::" + SL + HOME + SL + "locked:" + SL + "bin" + SL + "false",
         "nobody:x:65534:65534::" + SL + "nonexistent:" + SL + "bin" + SL + "sh",
+        "rel:x:1004:1004::relhome:" + SL + "bin" + SL + "sh",
+        "short:x:1005:1005",
+        "op1b:x:1006:1006::" + OP1 + ":" + SL + "bin" + SL + "bash",
         "broken line",
     ]
 )
@@ -1021,6 +1025,7 @@ def test_a_visible_operator_home_fails_the_probe_verdict() -> None:
     assert not ok("x; echo NO_HOST_HOME_3; fi\n", homes)
     assert not ok("kvm only\n", homes)
     assert not ok("ubuntu\nNO_HOST_HOME_0\n", [])
+    assert not ok("ubuntu\nNO_HOST_HOME_1\n", [SL])
 
 
 def test_python_and_rust_probes_agree() -> None:
@@ -1031,6 +1036,10 @@ def test_python_and_rust_probes_agree() -> None:
     for marker in ("NO_HOST_HOME_", "HOST_HOME_VISIBLE", "uid != 65534", "/nologin"):
         assert marker in rust and marker in python, marker
     assert "uid >= 1000" in rust and "uid >= 1000" in python
+    # The spot check reaches the verdict only through the wrapper that fails
+    # an unreadable account list (the VM flow itself needs the box to run).
+    assert rust.count("host_homes_invisible(&homes_read, &serial)") == 1
+    assert "host_home_is_invisible(&serial" not in rust
 
 
 def test_spire_issuer_takes_host_and_trust_domain_from_the_operator() -> None:

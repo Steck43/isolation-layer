@@ -573,7 +573,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
     let no_vmm = serial.contains("NO_VMM_PROCS");
-    let no_home = homes_read.is_ok() && host_home_is_invisible(&serial, &homes);
+    let no_home = host_homes_invisible(&homes_read, &serial);
 
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
@@ -667,6 +667,14 @@ pub fn host_invisibility_probe(homes: &[String]) -> String {
     )
 }
 
+/// The spot-check verdict: an unreadable host account list fails it.
+pub fn host_homes_invisible(homes_read: &Result<Vec<String>, String>, transcript: &str) -> bool {
+    match homes_read {
+        Ok(homes) => host_home_is_invisible(transcript, homes),
+        Err(_) => false,
+    }
+}
+
 pub fn host_home_is_invisible(transcript: &str, homes: &[String]) -> bool {
     let done = format!("NO_HOST_HOME_{}", homes.len());
     if homes.is_empty()
@@ -745,7 +753,7 @@ mod bind_tests {
 
 #[cfg(test)]
 mod home_probe_tests {
-    use super::{host_home_is_invisible, host_homes, host_invisibility_probe};
+    use super::{host_home_is_invisible, host_homes, host_homes_invisible, host_invisibility_probe};
 
     const MANAGER: &str = "/var/lib/isolation-manager";
     const PASSWD: &str = "root:x:0:0:root:/root:/bin/bash\n\
@@ -755,7 +763,10 @@ mod home_probe_tests {
         isolation:x:998:998::/var/lib/isolation-manager:/usr/sbin/nologin\n\
         svc:x:1002:1002::/srv/svc:/usr/sbin/nologin\n\
         locked:x:1003:1003::/srv/locked:/bin/false\n\
-        nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n\
+        nobody:x:65534:65534:nobody:/nonexistent:/bin/sh\n\
+        op1b:x:1006:1006::/srv/op1:/bin/bash\n\
+        rel:x:1004:1004::relhome:/bin/sh\n\
+        short:x:1005:1005\n\
         broken line\n";
 
     fn homes() -> Vec<String> {
@@ -792,6 +803,15 @@ mod home_probe_tests {
         assert!(!host_home_is_invisible("x; echo NO_HOST_HOME_3; fi\n", &homes));
         assert!(!host_home_is_invisible("ubuntu\nNO_HOST_HOME_0\n", &[]));
         assert!(host_home_is_invisible("ubuntu\nNO_HOST_HOME_3\n", &homes));
+        // A home with no last component cannot be checked by name.
+        assert!(!host_home_is_invisible("ubuntu\nNO_HOST_HOME_1\n", &["/".to_string()]));
+    }
+
+    #[test]
+    fn an_unreadable_account_list_fails_the_spot_check() {
+        let transcript = "ubuntu\nNO_HOST_HOME_3\n";
+        assert!(host_homes_invisible(&Ok(homes()), transcript));
+        assert!(!host_homes_invisible(&Err("denied".to_string()), transcript));
     }
 
     #[test]
