@@ -354,6 +354,64 @@ def test_built_in_host_hash_is_not_a_plain_word() -> None:
     assert all(re.fullmatch(r"[0-9a-f]{64}", h) for h in scan.BUILTIN_HOST_TOKENS)
 
 
+CAPITAL = FAKE[0].upper() + FAKE[1:]
+HOST_SHAPES = {
+    "env-name": FAKE.upper() + "_PROVE",
+    "camel-suffix": CAPITAL + "Prove",
+    "camel-prefix": "run" + CAPITAL,
+    "digit-suffix": FAKE + "01",
+    "digit-prefix": "01" + FAKE,
+    "glued-suffix": FAKE + "prove",
+    "glued-prefix": "sync" + FAKE,
+    "glued-upper": "SYNC" + FAKE.upper() + "HOST",
+    "split-space": FAKE[:5] + " " + FAKE[5:],
+    "split-three": FAKE[:3] + " " + FAKE[3:6] + " " + FAKE[6:],
+    "split-dash-three": FAKE[:3] + "-" + FAKE[3:6] + "-" + FAKE[6:],
+    "dns-name": FAKE + DOT + "example" + DOT + "net",
+    "file-name": "scripts" + SL + "sync-to-" + FAKE + DOT + "sh",
+}
+
+
+@pytest.fixture
+def fake_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    digest = hashlib.sha256(FAKE.encode()).hexdigest()
+    monkeypatch.setattr(scan, "BUILTIN_HOST_TOKENS", frozenset({digest}))
+    # raising=False lets this fixture run against a scanner without lengths;
+    # test_every_host_token_has_a_length fails if the constant is missing.
+    monkeypatch.setattr(
+        scan, "BUILTIN_HOST_LENGTHS", frozenset({len(FAKE)}), raising=False
+    )
+
+
+# T34: the host name is found however it is glued, split, or encoded.
+@pytest.mark.usefixtures("fake_host")
+@pytest.mark.parametrize("encoding", sorted(ENCODINGS))
+@pytest.mark.parametrize("shape", sorted(HOST_SHAPES))
+def test_host_name_is_found_in_every_shape_and_encoding(
+    shape: str, encoding: str
+) -> None:
+    data = b"x " + ENCODINGS[encoding](HOST_SHAPES[shape]) + b" y"
+    assert "box-host-name" in scan.scan_bytes(data, []), (shape, encoding)
+
+
+@pytest.mark.usefixtures("fake_host")
+def test_host_name_near_misses_stay_quiet() -> None:
+    for text in (FAKE[:-1] + " " + FAKE[1:], FAKE[:-1] + "q", FAKE[1:] + "s"):
+        assert scan.scan_bytes(text.encode(), []) == [], text
+
+
+def test_every_host_token_has_a_length() -> None:
+    assert scan.BUILTIN_HOST_LENGTHS
+    assert all(4 <= n <= 64 for n in scan.BUILTIN_HOST_LENGTHS)
+
+
+def test_tracked_tree_has_no_built_in_hits() -> None:
+    """The built-in rules need no secret, so the real tree is scanned here."""
+    files, hits = scan.scan_tree(ROOT, [])
+    assert files > 100
+    assert hits == []
+
+
 def test_allowed_identifier_is_exact(monkeypatch: pytest.MonkeyPatch) -> None:
     ident = FAKE.upper() + "_PATH"
     entries = [scan.Entry(0, CANARY), scan.Entry(1, FAKE[:6] + " " + FAKE[6:])]

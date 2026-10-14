@@ -45,6 +45,10 @@ MAX_DEPTH = 2
 BUILTIN_HOST_TOKENS = frozenset(
     {"1fbdb4006b386690234710ff0f85c9c665835b2f42a2eb4e68ba9a04713a3606"}
 )
+# Letter count of each host token, so the name is also found glued inside a
+# longer identifier (camel case, a digit suffix, a lower-case prefix).
+BUILTIN_HOST_LENGTHS = frozenset({8})
+MAX_COMPOUND = 128
 
 # sha256 of casefolded identifiers that are public interfaces defined by
 # sibling projects (an environment variable name read by the atoms engine).
@@ -105,6 +109,7 @@ _CONTINUATION = re.compile(r"[\"']\s*\\?\r?\n\s*[\"']|\\\r?\n\s*")
 _SVG_GEOMETRY = re.compile(r'\b(?:d|points|viewBox|transform)="[^"]*"')
 _BASE_ONLY = {"email", "user-at-host", "private-ipv4", "private-ipv6"}
 _TOKEN = re.compile(r"[A-Za-z0-9]+")
+_COMPOUND = re.compile(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*")
 
 _SEP = r"(?:\\+|/+)"
 RULES: dict[str, re.Pattern[str]] = {
@@ -241,6 +246,13 @@ def _token_hashes(text: str) -> frozenset[str]:
     words = [w.casefold() for w in _TOKEN.findall(text)]
     tokens = set(words)
     tokens.update(a + b for a, b in zip(words, words[1:]))
+    tokens.update(a + b + c for a, b, c in zip(words, words[1:], words[2:]))
+    for match in _COMPOUND.finditer(text):
+        run = _compact(match.group(0)).casefold()
+        if len(run) > MAX_COMPOUND:
+            continue
+        for size in BUILTIN_HOST_LENGTHS:
+            tokens.update(run[i : i + size] for i in range(len(run) - size + 1))
     return frozenset(hashlib.sha256(t.encode()).hexdigest() for t in tokens)
 
 
