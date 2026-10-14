@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ISO="${ISO:-$HOME/isolation-layer}"
-CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
-SOCK="${SOCK:-$HOME/.local/state/aegis/isolation-manager.sock}"
+CHAIN="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
+SOCK="${SOCK:-/var/lib/isolation-manager/isolation-manager.sock}"
 RECEIPT="${RECEIPT:-$ISO/docs/RECEIPT-SERVE-CLOSED-2026-10-03.md}"
 
 fail=0

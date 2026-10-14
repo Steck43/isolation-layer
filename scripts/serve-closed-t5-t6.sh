@@ -6,8 +6,8 @@ set -euo pipefail
 cd "$HOME/isolation-layer"
 source "$HOME/.cargo/env" 2>/dev/null || true
 
-CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
-SOCK="$HOME/.local/state/aegis/isolation-manager.sock"
+CHAIN="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
+SOCK="/var/lib/isolation-manager/isolation-manager.sock"
 MGR="$HOME/isolation-layer/target/release/isolation-manager"
 HELPER_SHA=$(sha256sum /usr/local/bin/jailer-launch | awk '{print $1}')
 PIN=$(python3 -c 'import json; print(json.loads(open("'"$CHAIN"'").read().strip().splitlines()[-1])["sha256"])')

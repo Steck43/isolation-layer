@@ -5,8 +5,8 @@
 # Modes: bad | unknown | one | dual | all
 set -euo pipefail
 
-SOCK="${SOCK:-$HOME/.local/state/aegis/isolation-manager.sock}"
-CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
+SOCK="${SOCK:-/var/lib/isolation-manager/isolation-manager.sock}"
+CHAIN="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
 MODE="${1:-all}"
 
 tip() {
@@ -79,7 +79,7 @@ do_dual() {
   # Slow client holds the line (partial JSON, no newline) while a second prove runs.
   python3 - <<'PY'
 import socket, threading, time, os, sys
-sock = os.environ.get("SOCK", os.path.expanduser("~/.local/state/aegis/isolation-manager.sock"))
+sock = os.environ.get("SOCK", "/var/lib/isolation-manager/isolation-manager.sock")
 
 def slow():
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
