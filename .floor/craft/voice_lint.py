@@ -25,8 +25,21 @@ RULES: list[tuple[str, str, re.Pattern[str], str, str]] = [
         "BLOCK",
         re.compile(
             r"\b(additionally|crucial|delve|enduring|enhance|fostering|garner|"
-            r"interplay|intricate|pivotal|showcase|tapestry|testament|underscore|"
+            r"interplay|intricate|pivotal|showcase|tapestry|testament|"
             r"vibrant|landscape)\b",
+            re.I,
+        ),
+        "AI vocabulary / abstract landscape metaphor",
+        "Use a plain concrete word",
+    ),
+    (
+        # "underscore" is also the name of the _ character, so only the verb
+        # sense counts: a form of the word followed by what it emphasises.
+        "AI-VOCAB",
+        "BLOCK",
+        re.compile(
+            r"\bunderscor(?:e|es|ed|ing)\b(?=\s+(?:the|a|an|this|that|these|those|"
+            r"its|their|our|his|her|how|why|what|just|again|once|importance|need)\b)",
             re.I,
         ),
         "AI vocabulary / abstract landscape metaphor",
