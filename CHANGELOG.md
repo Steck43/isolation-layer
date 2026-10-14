@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Public files no longer embed a host home path. The systemd unit documents an install prefix, the sync script requires a source tree and host, and the guest home probe uses a placeholder. Proof files that changed record the original sha256 and the redacted sha256.
+- The private name list is no longer in the repository in any form. The public-surface test reads it from the `LEAK_DENYLIST` Actions secret, or from `.git/info/leak-denylist` on a local clone, and fails when neither is set. A new test rebuilds every tracked file the ways a reader could (joined string literals, percent, escape, base64, and hex decoding, Unicode normalisation, zero-width removal, reversed, rot13) and fails if any private entry is recoverable; on the previous head it found all 13 entries in the test file's split strings. Hits print as entry numbers, never names. A CI step prints the scanned file and entry counts and fails on zero. The earlier commit that held the list stays in history (fix-forward).
 - README Figure 1 is the dest-true SVG. The box sits between floor and judge. Mermaid stays the sketch.
 - README drops identity-as-horizon. The four planes take identity as an argument. This roof stays the box.
 

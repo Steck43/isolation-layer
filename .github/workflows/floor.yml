@@ -108,7 +108,13 @@ jobs:
         # run. On capability-gate that turns a green 37-passed/2-skipped suite
         # red in two different ways depending on which of two same-named modules
         # lands on the path. The skips are correct behaviour.
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
         run: PYTHONPATH=. python -m pytest -q
+      - name: public surface scan (file count)
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+        run: PYTHONPATH=. python tests/test_public_surface.py
 
   rust-tests:
     name: rust (cargo test)
