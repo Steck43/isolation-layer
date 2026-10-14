@@ -16,7 +16,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-_SPEC = importlib.util.spec_from_file_location("b1_prove", ROOT / "scripts" / "b1-prove.py")
+_SPEC = importlib.util.spec_from_file_location(
+    "b1_prove", ROOT / "scripts" / "b1-prove.py"
+)
 assert _SPEC and _SPEC.loader
 b1 = importlib.util.module_from_spec(_SPEC)
 sys.modules["b1_prove"] = b1  # dataclasses resolve their module by name
@@ -27,18 +29,26 @@ ECHO_PROBE = (
     "root@ubuntu-fc-uvm:~# ls -1 /home 2>&1; if [ -e '/var/lib/isolation-manager' ]; "
     "then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n"
 )
-SCROLLED_PROBE = "<-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n"
-ECHO_VMM = "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n"
+SCROLLED_PROBE = (
+    "<-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n"
+)
+ECHO_VMM = (
+    "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n"
+)
 MARKERS = ("HOST_HOME_VISIBLE", "NO_HOST_HOME", "NO_VMM_PROCS")
 
 
 def test_echoed_probe_with_a_clean_listing_and_the_absent_marker_is_invisible() -> None:
     assert b1.host_home_is_invisible(f"{ECHO_PROBE}ubuntu\nNO_HOST_HOME\n", HOME)
-    assert b1.host_home_is_invisible(f"{SCROLLED_PROBE}ubuntu\r\nNO_HOST_HOME\r\n", HOME)
+    assert b1.host_home_is_invisible(
+        f"{SCROLLED_PROBE}ubuntu\r\nNO_HOST_HOME\r\n", HOME
+    )
 
 
 def test_the_visible_marker_on_its_own_line_is_visible() -> None:
-    assert not b1.host_home_is_invisible(f"{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n", HOME)
+    assert not b1.host_home_is_invisible(
+        f"{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n", HOME
+    )
     # Both marker lines: visible wins, even with the absent marker present.
     both = f"{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\nNO_HOST_HOME\n"
     assert not b1.host_home_is_invisible(both, HOME)
@@ -51,7 +61,9 @@ def test_an_echo_with_no_marker_lines_is_not_invisible() -> None:
 
 
 def test_the_manager_account_name_in_the_listing_is_visible() -> None:
-    assert not b1.host_home_is_invisible(f"{ECHO_PROBE}isolation-manager\nNO_HOST_HOME\n", HOME)
+    assert not b1.host_home_is_invisible(
+        f"{ECHO_PROBE}isolation-manager\nNO_HOST_HOME\n", HOME
+    )
 
 
 def test_the_vmm_marker_counts_only_on_its_own_line() -> None:

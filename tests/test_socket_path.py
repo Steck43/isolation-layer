@@ -53,7 +53,9 @@ def test_main_default_equals_the_unit_socket() -> None:
 def test_every_script_socket_default_equals_the_unit_socket() -> None:
     want = unit_socket()
     files = tracked("scripts", "deploy")
-    checked = [f for f in files if NAME in f.read_text(encoding="utf-8", errors="replace")]
+    checked = [
+        f for f in files if NAME in f.read_text(encoding="utf-8", errors="replace")
+    ]
     assert len(checked) >= 5, [f.name for f in checked]
     bad = {
         f.relative_to(ROOT).as_posix(): mismatches(f.read_text(encoding="utf-8"), want)
@@ -71,7 +73,9 @@ SERVICE_SCRIPTS = (
 
 
 def unit_env(key: str) -> str:
-    found = re.findall(rf"(?m)^Environment={key}=(\S+)\s*$", UNIT.read_text(encoding="utf-8"))
+    found = re.findall(
+        rf"(?m)^Environment={key}=(\S+)\s*$", UNIT.read_text(encoding="utf-8")
+    )
     assert len(found) == 1, key
     return found[0]
 

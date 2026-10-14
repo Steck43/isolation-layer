@@ -580,7 +580,9 @@ def test_guest_probe_uses_the_resolved_home(monkeypatch: pytest.MonkeyPatch) -> 
     probe = module.host_invisibility_probe()
     assert "ls -1 " + SL + HOME in probe
     assert home in probe
-    assert "HOST_HOME_VISIBLE" in probe
+    # The typed probe carries the marker only in its typed form, never plain.
+    assert module.typed_marker("HOST_HOME_VISIBLE") in probe
+    assert "HOST_HOME_VISIBLE" not in probe
     assert "<manager-home>" not in probe
 
 
