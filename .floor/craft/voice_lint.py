@@ -18,8 +18,63 @@ from pathlib import Path
 
 EXIT_FAIL = 2
 
+# --- "underscore": the word is AI vocabulary unless it names the character ----
+#
+# Every form (underscore, underscores, underscored, underscoring) is flagged in
+# any use. Only the singular or plural noun passes, and only where it names the
+# _ character: right after a determiner or a position word ("an underscore",
+# "trailing underscores"), right before the glyph or a word like "character",
+# in a list with other character names ("letters, digits and underscores"),
+# before a preposition ("underscores in names"), quoted as the name itself, or
+# read "as the character". The verb forms always fail.
+_SEP_NAMES = (
+    r"(?:dash|hyphen|dot|period|slash|backslash|space|colon|semicolon|comma|"
+    r"letter|digit|number|plus|tilde|asterisk|character|underscore)(?:e?s)?"
+)
+_NOUN_BEFORE = re.compile(
+    r"(?:\b(?:a|an|the|one|each|every|no|any|single|double|triple|leading|"
+    r"trailing|extra|literal|final|first|last|lone|two|three|more|fewer|many|"
+    r"several|of)\s+|\b"
+    + _SEP_NAMES
+    + r"\s*(?:,\s*(?:(?:and|or)\s+)?|\s(?:and|or)\s+))$",
+    re.I,
+)
+_NOUN_AFTER = re.compile(
+    r"(?:\s*\(\s*(?:_|`_`|\"_\"|'_')?\s*\)|\s+(?:characters?|chars?|signs?|"
+    r"separators?)\b|\s+as\s+the\s+(?:_\s+)?character\b|\s*(?:,\s*(?:(?:and|or)\s+)?"
+    r"|\s(?:and|or)\s+)(?:an?\s+|the\s+)?" + _SEP_NAMES + r"\b)",
+    re.I,
+)
+_PLURAL_PREP = re.compile(
+    r"\s+(?:in|into|inside|with|within|from|between|are|were)\b", re.I
+)
+_UNDERSCORE = re.compile(r"\bunderscor(?:e|es|ed|ing)\b", re.I)
+
+
+class _UnderscoreVocab:
+    """A pattern stand-in: finditer yields only the uses that are not the noun."""
+
+    def finditer(self, text: str):
+        for m in _UNDERSCORE.finditer(text):
+            if not self._names_the_character(text, m):
+                yield m
+
+    @staticmethod
+    def _names_the_character(text: str, m: re.Match[str]) -> bool:
+        word = m.group(0).lower()
+        if word not in ("underscore", "underscores"):
+            return False
+        before = text[max(0, m.start() - 40) : m.start()]
+        after = text[m.end() : m.end() + 40]
+        if before.endswith('"') and after.startswith('"'):
+            return True
+        if _NOUN_BEFORE.search(before) or _NOUN_AFTER.match(after):
+            return True
+        return word == "underscores" and bool(_PLURAL_PREP.match(after))
+
+
 # (rule_id, severity, pattern, what, fix) — patterns from egress-voice bars.
-RULES: list[tuple[str, str, re.Pattern[str], str, str]] = [
+RULES: list[tuple[str, str, re.Pattern[str] | _UnderscoreVocab, str, str]] = [
     (
         "AI-VOCAB",
         "BLOCK",
@@ -33,15 +88,11 @@ RULES: list[tuple[str, str, re.Pattern[str], str, str]] = [
         "Use a plain concrete word",
     ),
     (
-        # "underscore" is also the name of the _ character, so only the verb
-        # sense counts: a form of the word followed by what it emphasises.
+        # Every form of "underscore" is AI vocabulary in any use, except the
+        # noun that names the _ character. See _UnderscoreVocab.
         "AI-VOCAB",
         "BLOCK",
-        re.compile(
-            r"\bunderscor(?:e|es|ed|ing)\b(?=\s+(?:the|a|an|this|that|these|those|"
-            r"its|their|our|his|her|how|why|what|just|again|once|importance|need)\b)",
-            re.I,
-        ),
+        _UnderscoreVocab(),
         "AI vocabulary / abstract landscape metaphor",
         "Use a plain concrete word",
     ),
