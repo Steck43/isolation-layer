@@ -56,7 +56,7 @@ isProject: false
 
 **Primary recommendation:** Serve-closed is the correct next done-bar after merges.
 
-**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens landen-uid drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1–5, 8–9 must be green before enable.
+**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens the manager account's drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1–5, 8–9 must be green before enable.
 
 ```mermaid
 flowchart TD
@@ -147,7 +147,7 @@ flowchart TD
 
 - [ ] **Step 1:** Implement response fields + read bound before allocating huge lines; cargo test/build.
 - [ ] **Step 2:** Foreground: `REQUIRE_ANCESTOR=$PIN AEGIS_JAILER_SHA256=<installed> ./target/release/isolation-manager serve --socket $HOME/.local/state/aegis/isolation-manager.sock`
-- [ ] **Step 3:** Socket `stat` mode 0600 owner landen.
+- [ ] **Step 3:** Socket `stat` mode 0600 owner isolation.
 - [ ] **Step 4:** Bad JSON + unknown cmd → `ok:false`; chain tip unchanged.
 - [ ] **Step 5:** Valid prove JSON → `ok:true`, tip advances, verify PASS, residue empty.
 - [ ] **Step 6:** Dual-client / slow-client starvation drill (Codex #4): second prove must succeed within declared bound or code-fix before enable.

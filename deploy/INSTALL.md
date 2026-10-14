@@ -2,7 +2,7 @@
 
 ## Critical: helper binary permissions
 
-The helper **must** be installed **root-owned, mode `0755`, in a root-owned directory, and not writable by the Manager user (`landen`)**.
+The helper **must** be installed **root-owned, mode `0755`, in a root-owned directory, and not writable by the Manager user (`isolation`)**.
 
 If the invoking user can rewrite `/usr/local/bin/jailer-launch`, the scoped `NOPASSWD` rule is equivalent to passwordless root.
 
@@ -12,7 +12,7 @@ Verify after install:
 ls -la /usr/local/bin/jailer-launch
 # expect: -rwxr-xr-x 1 root root ... /usr/local/bin/jailer-launch
 namei -l /usr/local/bin/jailer-launch
-# every directory in the path must not be group/world-writable; /usr/local/bin must not be owned by landen
+# every directory in the path must not be group/world-writable; /usr/local/bin must not be owned by isolation
 ```
 
 ## Build (unprivileged)

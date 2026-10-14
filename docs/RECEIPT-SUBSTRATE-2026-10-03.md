@@ -9,7 +9,7 @@ Does **not** unlock SPEAK (ATTACK key is prove exit 0).
 
 | Check | Host | Result |
 |---|---|---|
-| hostname | SSH `landen@aegisbox` | `aegisbox` |
+| hostname | SSH `user@box` | `aegisbox` |
 | `/dev/kvm` | aegisbox | present `crw-rw----+` root:kvm |
 | `/dev/vhost-vsock` | aegisbox | present `crw-rw----` root:kvm |
 | `firecracker --version` | aegisbox | Firecracker v1.16.1 |

@@ -13,7 +13,7 @@
 
 ## Honest ceiling
 
-- Listener already runs as unprivileged Manager user (landen). This slice adds no-new-privs floor.
+- Listener already runs as the unprivileged Manager account. This slice adds no-new-privs floor. The unit account is `isolation`.
 - Full dedicated cgroup + seccomp profile for the listener binary remains **VISION** (may need a minimal helper later - not this commit; no sudoers widen).
 
 ## Still VISION

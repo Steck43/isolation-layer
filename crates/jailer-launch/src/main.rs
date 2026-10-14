@@ -234,10 +234,10 @@ mod tests {
             uid: 1000,
             gid: 1000,
         };
-        let argv = jailer_cmd::ssh_hop_argv("landen@aegisbox.mshome.net", &req);
+        let argv = jailer_cmd::ssh_hop_argv("user@box", &req);
         let joined = argv.join(" ");
         assert!(joined.starts_with("ssh -o BatchMode=yes"));
-        assert!(joined.contains("landen@aegisbox.mshome.net"));
+        assert!(joined.contains("user@box"));
         assert!(joined.contains("jailer-launch --jail-id mgr-hop000001"));
         assert!(!joined.contains("network"));
         assert!(!joined.contains("--netns"));

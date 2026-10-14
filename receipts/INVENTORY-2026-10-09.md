@@ -34,11 +34,11 @@ Hostile-reviewer inventory. States are STARTED / BUILT / TESTED / LIVE-PROVEN.
 | Python floor collect | 19 collected |
 | CI floor on main after #27 (`38009764211`) | rust green; pytest 15 passed, 4 skipped |
 
-### Live substrate (aegisbox via Tailscale `100.72.168.92`)
+### Live substrate (aegisbox via Tailscale `<tailnet-host>`)
 
 | Check | Result |
 |---|---|
-| Host | `aegisbox`; eth0 `172.24.202.183`; Tailscale `100.72.168.92` |
+| Host | `aegisbox`; eth0 `<lan-host>`; Tailscale `<tailnet-host>` |
 | `/dev/kvm` | present, readable |
 | jailer | `/usr/local/bin/jailer` sha256 `1f3a0c1fe862…` |
 | jailer-launch | `/usr/local/bin/jailer-launch` sha256 `2197439fe00b…` |

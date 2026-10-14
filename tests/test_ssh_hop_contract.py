@@ -23,7 +23,7 @@ def test_ssh_hop_argv_adds_no_network_and_names_the_box() -> None:
     src = _text("crates/jailer-launch/src/jailer_cmd.rs")
     start = src.index("pub fn ssh_hop_argv")
     body = src[start:]
-    assert "landen@aegisbox.mshome.net" not in body
+    assert "@" not in body or "noreply.github.com" in body
     assert "BatchMode=yes" in body
     assert "jailer-launch" in body
     assert "network" not in body

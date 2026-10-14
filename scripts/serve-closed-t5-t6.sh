@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Landen one-shot: Serve-closed T5 (start, no enable) + T6 (enable, reboot, receipt fill).
-# Run on aegisbox: bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh
+# Run on aegisbox: bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh
 # Requires interactive sudo (unit install / systemctl). Jailer NOPASSWD alone is not enough.
 set -euo pipefail
 cd "$HOME/isolation-layer"
@@ -75,7 +75,7 @@ echo T5_OK
 
 echo "=== T5 complete (unit started, not enabled) ==="
 echo "For T6 enable+reboot, run with SERVE_ENABLE=1:"
-echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/landen-serve-closed-t5-t6.sh"
+echo "  SERVE_ENABLE=1 bash ~/isolation-layer/scripts/serve-closed-t5-t6.sh"
 if [[ "${SERVE_ENABLE:-}" == "1" ]]; then
   sudo systemctl enable isolation-manager.service
   en2=$(systemctl is-enabled isolation-manager.service 2>&1 || true)

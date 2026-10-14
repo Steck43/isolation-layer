@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# Private sync of a source tree to the box. No public push.
-# Hyper-V Default Switch DHCP moves on save/close. Pass the SSH target
-# explicitly. This script has no default home and no default host.
+# Private sync Windows tree -> aegisbox (no public push).
+# Hyper-V Default Switch DHCP moves on save/close. Prefer Tailscale host, then
+# mshome, then a one-shot IP: AEGISBOX_HOST=user@host
 set -euo pipefail
-SRC="${1:-${ISOLATION_SRC:-}}"
-HOST="${AEGISBOX_HOST:-}"
-if [[ -z "$SRC" || -z "$HOST" ]]; then
-  echo "usage: AEGISBOX_HOST=user@host $0 <source-tree>" >&2
-  exit 2
-fi
+SRC="${1:-${ISOLATION_SRC:?set ISOLATION_SRC}}"
+HOST="${AEGISBOX_HOST:?set AEGISBOX_HOST}"
 cd "$SRC"
 tar --exclude='.git' --exclude='target' --exclude='artifacts' -czf - . \
   | ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'mkdir -p "$HOME/isolation-layer" && tar -C "$HOME/isolation-layer" -xzf -'

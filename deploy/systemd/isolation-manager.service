@@ -4,12 +4,12 @@
 # Idle state: no Firecracker process.
 #
 # Install prefix: /opt/isolation-layer
-# State directory: /var/lib/isolation-manager
+# Account: isolation (dedicated; create it in the install script)
+# State directory: declared below as StateDirectory=isolation-manager
 # Socket: /var/lib/isolation-manager/isolation-manager.sock
-# Replace the prefix in this unit before install if the host uses another
-# directory. These paths are not a home directory.
+# Replace the prefix before install if the host uses another directory.
 #
-# DO NOT enable until Serve-closed is an explicit Landen gate.
+# DO NOT enable until Serve-closed is an explicit operator gate.
 # Dry-check: systemd-analyze verify deploy/systemd/isolation-manager.service
 #
 # Install (Landen):
@@ -33,9 +33,10 @@ Documentation=file:///opt/isolation-layer/docs/PLAN-live-box.md
 
 [Service]
 Type=simple
-User=landen
-Group=landen
+User=isolation
+Group=isolation
 WorkingDirectory=/opt/isolation-layer
+StateDirectory=isolation-manager
 Environment=AEGIS_DECISION_CHAIN=/var/lib/isolation-manager/decision-chain.jsonl
 Environment=AEGIS_REJECT_LOG=/var/lib/isolation-manager/vestibule-reject.jsonl
 Environment=RUST_LOG=info
@@ -48,7 +49,7 @@ Restart=on-failure
 RestartSec=5
 NoNewPrivileges=false
 ProtectSystem=strict
-ProtectHome=read-only
+ProtectHome=true
 # Do not list /run/user/1000: it is absent until logind creates the session and
 # breaks early boot with NAMESPACE (status 226) when the unit is enabled.
 ReadWritePaths=/var/lib/isolation-manager /tmp /opt/aegis/isolation-layer/jailer /opt/isolation-layer/target/release

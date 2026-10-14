@@ -266,3 +266,23 @@ jobs:
           echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tgz" | sha256sum -c -
           tar -C /tmp -xzf /tmp/actionlint.tgz actionlint
           /tmp/actionlint -color
+
+  public-surface:
+    name: public-surface
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: scan with the base copy when main has one
+        run: |
+          git fetch --no-tags origin main
+          if git cat-file -e origin/main:scripts/public_surface_scan.py 2>/dev/null; then
+            git show origin/main:scripts/public_surface_scan.py > /tmp/public_surface_scan.py
+            git show origin/main:scripts/public_name_hashes.txt > /tmp/public_name_hashes.txt
+            python /tmp/public_surface_scan.py --root "$GITHUB_WORKSPACE"
+          else
+            python scripts/public_surface_scan.py --root "$GITHUB_WORKSPACE"
+          fi

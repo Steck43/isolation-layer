@@ -19,3 +19,4 @@
 # evidence/receipts/live; the pattern is widened here because aegis-atoms and
 # newwave publish receipts under evidence/ too.
 evidence/**/*.json -text
+receipts/raw/** -text

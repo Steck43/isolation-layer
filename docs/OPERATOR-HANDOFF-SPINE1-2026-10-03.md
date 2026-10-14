@@ -10,9 +10,9 @@ cd ~/isolation-layer
 # Path constants in aegis-common expect /opt/aegis/isolation-layer (goldens + jailer base).
 # Artifacts today live under ~/isolation-layer/artifacts — symlink once:
 sudo mkdir -p /opt/aegis
-sudo ln -sfn "$HOME/isolation-layer" /opt/aegis/isolation-layer
+sudo ln -sfn /opt/isolation-layer /opt/aegis/isolation-layer
 sudo mkdir -p /opt/aegis/isolation-layer/jailer
-sudo chown landen:landen /opt/aegis/isolation-layer/jailer
+sudo chown isolation:isolation /opt/aegis/isolation-layer/jailer
 
 cargo build --release -p jailer-launch -p isolation-manager
 cargo test -p aegis-common -p jailer-launch -p vestibule
