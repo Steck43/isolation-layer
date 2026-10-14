@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The tests job checks out full history, so a hash pin marked historical is matched against past committed versions in CI as it is locally. On a shallow clone the pin check now fails with one named problem instead of reporting digest mismatches.
 - Drop the Dependabot `pip` ecosystem on this roof. There is no `requirements.txt` or `pyproject.toml`, so the weekly pip job failed with `dependency_file_not_found` (run `37385460556`).
 
 ### Added
