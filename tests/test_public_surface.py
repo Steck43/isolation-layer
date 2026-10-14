@@ -702,28 +702,137 @@ def test_redacted_digests_match_the_files_they_name() -> None:
         assert recorded == [actual], doc
 
 
-def test_recorded_file_hashes_match_or_are_marked_redacted() -> None:
-    digest = re.compile(r"\b[0-9a-f]{64}\b")
-    named = re.compile(r"[A-Za-z0-9_./-]+\.(?:json|md|py|rs|txt|toml)")
+DIGEST = re.compile(r"(?<![0-9A-Fa-f])[0-9a-fA-F]{64}(?![0-9A-Fa-f])")
+NAMED = re.compile(
+    r"(?<![\w./-])([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:json|md|py|rs|txt|toml|sh|yml|lock))"
+    r"(?![\w-])"
+)
+
+
+def resolve_pin(doc: str, name: str, tracked: list[str]) -> str | None:
+    """The tracked file a recorded name means, or None if it is not unique."""
+    name = name.lstrip("./")
+    folder = str(Path(doc).parent).replace(os.sep, "/")
+    for candidate in (name, f"{folder}/{name}"):
+        if candidate in tracked:
+            return candidate
+    same_base = [t for t in tracked if t.rsplit("/", 1)[-1] == name.rsplit("/", 1)[-1]]
+    ends = [t for t in same_base if t.endswith("/" + name) or t == name]
+    pick = ends or same_base
+    return pick[0] if len(pick) == 1 else None
+
+
+def past_digests(root: Path, rel: str) -> set[str]:
+    """sha256 of every version of ``rel`` in history, with LF and CRLF ends."""
+    commits = subprocess.check_output(
+        ["git", "log", "--all", "--format=%H", "--", rel], cwd=root, text=True
+    ).split()
+    out: set[str] = set()
+    for commit in commits:
+        shown = subprocess.run(
+            ["git", "show", f"{commit}:{rel}"], cwd=root, capture_output=True
+        )
+        if shown.returncode == 0:
+            out.add(hashlib.sha256(shown.stdout).hexdigest())
+            crlf = shown.stdout.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            out.add(hashlib.sha256(crlf).hexdigest())
+    return out
+
+
+def pin_problems(root: Path) -> list[str]:
+    tracked = scan.tracked_files(root)
     problems: list[str] = []
-    for rel in scan.tracked_files(ROOT):
-        path = ROOT / rel
-        if path.suffix.lower() not in {".md", ".json"} or not path.is_file():
+    for rel in tracked:
+        path = root / rel
+        if not path.is_file() or rel.startswith(("tests/", "scripts/public_surface")):
             continue
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        for index, line in enumerate(lines):
-            digests = digest.findall(line)
-            rels = named.findall(line)
-            if not digests or not rels or "redacted" in line.casefold():
+        text = path.read_bytes().decode("utf-8", "replace")
+        for index, line in enumerate(text.splitlines()):
+            digests = {d.lower() for d in DIGEST.findall(line)}
+            names = NAMED.findall(line)
+            if not digests or not names:
                 continue
-            for target in rels:
-                full = ROOT / target
-                if (
-                    full.is_file()
-                    and hashlib.sha256(full.read_bytes()).hexdigest() not in digests
-                ):
-                    problems.append(f"{rel}:{index + 1}:{target}")
+            if "redacted" in line.casefold():
+                continue  # test_redacted_digests_match_the_files_they_name
+            historical = "historical" in line.casefold()
+            actual = set()
+            unresolved = []
+            for name in names:
+                target = resolve_pin(rel, name, tracked)
+                if target is None:
+                    unresolved.append(name)
+                elif historical:
+                    actual |= past_digests(root, target)
+                else:
+                    actual.add(hashlib.sha256((root / target).read_bytes()).hexdigest())
+            if historical and not actual:
+                continue  # names a file outside this repository
+            if not actual & digests:
+                where = f"{rel}:{index + 1}"
+                problems.append(
+                    f"{where}: names {sorted(names)} resolve to no file this "
+                    f"digest matches (unresolved {sorted(unresolved)})"
+                )
+    return problems
+
+
+def test_recorded_file_hashes_match_or_are_marked_historical() -> None:
+    problems = pin_problems(ROOT)
     assert problems == [], "hash pins disagree:\n" + "\n".join(problems)
+
+
+def _pin_repo(tmp_path: Path, record: str) -> Path:
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t" + AT + "example" + DOT + "com")
+    git("config", "user.name", "t")
+    src = tmp_path / "crates" / "core" / "src"
+    src.mkdir(parents=True)
+    (src / "prove.rs").write_bytes(b"old\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "old")
+    (src / "prove.rs").write_bytes(b"new\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "record.md").write_text(record + "\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-q", "-m", "new")
+    return tmp_path
+
+
+OLD = hashlib.sha256(b"old\n").hexdigest()
+NEW = hashlib.sha256(b"new\n").hexdigest()
+
+
+# T29: a pin either matches, or is marked historical and matches some past
+# version; a short name is resolved, never skipped.
+@pytest.mark.parametrize(
+    ("record", "ok"),
+    [
+        pytest.param(f"`prove.rs` sha256 `{NEW}`", True, id="short-name-current"),
+        pytest.param(f"`prove.rs` sha256 `{OLD}`", False, id="short-name-stale"),
+        pytest.param(f"`src/prove.rs` sha256 `{OLD}`", False, id="partial-path-stale"),
+        pytest.param(
+            f"`crates/core/src/prove.rs` sha256 `{OLD.upper()}`",
+            False,
+            id="full-path-stale-upper",
+        ),
+        pytest.param(f"`prove.rs` (historical) `{OLD}`", True, id="historical-past"),
+        pytest.param(
+            f"`prove.rs` (historical) `{'0' * 64}`", False, id="historical-bogus"
+        ),
+        pytest.param(f"`gone.json` sha256 `{OLD}`", False, id="unresolved-unmarked"),
+        pytest.param(
+            f"`gone.json` (historical) `{OLD}`", True, id="unresolved-historical"
+        ),
+    ],
+)
+def test_pin_check_resolves_and_fails_instead_of_skipping(
+    tmp_path: Path, record: str, ok: bool
+) -> None:
+    problems = pin_problems(_pin_repo(tmp_path, record))
+    assert (problems == []) is ok, problems
 
 
 def test_service_account_is_dedicated_and_home_is_protected() -> None:
