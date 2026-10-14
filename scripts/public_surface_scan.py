@@ -8,8 +8,8 @@ Private terms are never stored in this repository. CI passes them in the
 LEAK_DENYLIST secret; a local run reads --denylist (default
 .git/info/leak-denylist). One entry per line: plain text matches as a
 case-insensitive substring after normalisation, and an entry starting with
-"re:" is a regular expression. The list must hold exactly --expect-entries
-entries plus the canary, and the canary must be found in every planted form
+"re:" is a regular expression. The list must hold exactly EXPECTED_ENTRIES
+(or --expect-entries, for tests) entries plus the canary, and the canary must be found in every planted form
 before the real scan runs, so an empty, truncated, or never-matching list
 fails.
 
@@ -36,6 +36,9 @@ from pathlib import Path
 from urllib.parse import unquote
 
 CANARY = "zqxwvk"
+# How many private entries the list must hold. CI runs the base branch copy
+# of this file, so the count is set by the base, not by the change under review.
+EXPECTED_ENTRIES = 13
 MIN_PLAIN = 3
 MIN_COMPACT = 6
 MAX_DEPTH = 2
@@ -494,7 +497,7 @@ def _read_list(path: Path | None) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--expect-entries", type=int, required=True)
+    parser.add_argument("--expect-entries", type=int, default=EXPECTED_ENTRIES)
     parser.add_argument("--denylist", type=Path, default=None)
     args = parser.parse_args(argv)
     root = args.root.resolve()

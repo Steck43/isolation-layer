@@ -151,3 +151,18 @@ def test_astral_look_alikes_in_utf32_hit(enc: str, shift: int) -> None:
     entries = scan.load_entries(f"{CANARY}\n{FAKE}\n", 1)
     data = bytes(range(1, 1 + shift)) + BOLD.encode(enc) + b"\xff"
     assert "private entry 1" in scan.scan_bytes(data, entries)
+
+
+# Without --expect-entries the scanner holds the list to its own constant.
+def test_main_defaults_the_entry_count_to_the_scanner_constant(
+    clean_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert scan.EXPECTED_ENTRIES == 13
+    names = [f"{FAKE}{i:02d}" for i in range(scan.EXPECTED_ENTRIES)]
+    monkeypatch.setenv("LEAK_DENYLIST", "\n".join([CANARY, *names]) + "\n")
+    assert scan.main(["--root", str(clean_tree)]) == 0
+    monkeypatch.setenv("LEAK_DENYLIST", "\n".join([CANARY, *names[:-1]]) + "\n")
+    assert scan.main(["--root", str(clean_tree)]) == 1
+    assert "FAIL" in capsys.readouterr().out
