@@ -99,12 +99,14 @@ VS_EXIT=0
 root@ubuntu-fc-uvm:~# ps aux | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS
 NO_VMM_PROCS
 
-root@ubuntu-fc-uvm:~# ls /home/landen 2>&1 || echo NO_HOST_HOME
-ls: cannot access '/home/landen': No such file or directory
+root@ubuntu-fc-uvm:~# ls /home/host-user 2>&1 || echo NO_HOST_HOME
+ls: cannot access '/home/host-user': No such file or directory
 NO_HOST_HOME
 ```
 
 **PASS** — no host VMM process visible, no host home path mounted.
+
+Host paths redacted on 2026-10-13. `docs/b1-results.json` original sha256 `9bae12cf0b05fe4e09d3c87c24a72960c5261dee42b66c6c81d462eddcef613b`. Redacted sha256 `2f6e95ee0e90b718585fdd5dc375db761a2b6bc97e0d4c0a537fad8e395b10d6`.
 
 ## 5. BS-00 boot baseline (nested Hyper-V host)
 

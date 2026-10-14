@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Public files no longer embed a host home path. The systemd unit documents an install prefix, the sync script requires a source tree and host, and the guest home probe uses a placeholder. Proof files that changed record the original sha256 and the redacted sha256.
 - README Figure 1 is the dest-true SVG. The box sits between floor and judge. Mermaid stays the sketch.
 - README drops identity-as-horizon. The four planes take identity as an argument. This roof stays the box.
 

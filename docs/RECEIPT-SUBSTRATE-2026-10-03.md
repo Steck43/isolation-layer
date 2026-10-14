@@ -15,7 +15,7 @@ Does **not** unlock SPEAK (ATTACK key is prove exit 0).
 | `firecracker --version` | aegisbox | Firecracker v1.16.1 |
 | `jailer --version` | aegisbox | Jailer v1.16.1 |
 | artifacts `~/isolation-layer/artifacts/x86_64` | aegisbox | vmlinux-6.1.176, ubuntu-24.04.ext4, squashfs present |
-| WSL LandensPC `/dev/kvm` | WSL | present |
+| WSL <dev-host> `/dev/kvm` | WSL | present |
 | WSL `/dev/vhost-vsock` | WSL | **absent** (expected; not substrate) |
 | WSL `firecracker` | WSL | not on PATH this sitting |
 

@@ -330,7 +330,7 @@ def run_prove(mode: str) -> int:
     for cmd in [
         "ls /dev/kvm 2>&1",
         "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS",
-        "ls /home/landen 2>&1 || echo NO_HOST_HOME",
+        "ls /home/host-user 2>&1 || echo NO_HOST_HOME",
         "uname -a",
     ]:
         assert ctx.proc.stdin is not None

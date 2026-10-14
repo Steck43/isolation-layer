@@ -47,7 +47,7 @@ sudo -u nobody python3 - <<'PY' || true
 import socket
 s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
-    s.connect("/home/landen/.local/state/aegis/isolation-manager.sock")
+    s.connect("/var/lib/isolation-manager/isolation-manager.sock")
     raise SystemExit("nobody connected — fail")
 except Exception as e:
     print("NOBODY_DENIED", type(e).__name__)

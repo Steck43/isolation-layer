@@ -426,7 +426,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     for cmd in [
         "ls /dev/kvm 2>&1\n",
         "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n",
-        "ls /home/landen 2>&1 || echo NO_HOST_HOME\n",
+        "ls /home/host-user 2>&1 || echo NO_HOST_HOME\n",
     ] {
         stdin
             .write_all(cmd.as_bytes())

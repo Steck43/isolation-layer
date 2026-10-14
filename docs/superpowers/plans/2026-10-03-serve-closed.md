@@ -73,14 +73,14 @@ flowchart TD
 
 ## File map (Serve-closed wave)
 
-- Modify: [`crates/isolation-manager/src/serve.rs`](C:/Users/lande/Engineering_and_Development/isolation-layer/crates/isolation-manager/src/serve.rs) — return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
-- Modify: [`deploy/systemd/isolation-manager.service`](C:/Users/lande/Engineering_and_Development/isolation-layer/deploy/systemd/isolation-manager.service) — drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
+- Modify: [`crates/isolation-manager/src/serve.rs`](<repo-root>/crates/isolation-manager/src/serve.rs) — return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
+- Modify: [`deploy/systemd/isolation-manager.service`](<repo-root>/deploy/systemd/isolation-manager.service) — drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
 - Create: `deploy/systemd/isolation-manager.service.d/continuity.conf.example` — `REQUIRE_ANCESTOR=` + `AEGIS_JAILER_SHA256=` placeholders.
 - Create: `scripts/serve-uds-prove.sh` — one-shot socket prove client (valid / bad JSON / unknown cmd / dual client).
 - Create: `scripts/serve-closed-parity.sh` — deepen parity: active/enabled/socket mode/runtime exe hash.
 - Create: `docs/RECEIPT-SERVE-CLOSED-2026-10-03.md` — final destination receipt.
-- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/REMAINDER-SPINE1-2026-10-03.md) — tip `b036fb0f…` / harden proved; Serve status; peercred residual.
-- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md) — Serve rows.
+- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](<repo-root>/docs/REMAINDER-SPINE1-2026-10-03.md) — tip `b036fb0f…` / harden proved; Serve status; peercred residual.
+- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](<repo-root>/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md) — Serve rows.
 - Modify: SPEAK Live box line only after last serve prove tip (T7-class dest-sync; no second prove after sync).
 - Also write plan copy on execute to `isolation-layer/docs/superpowers/plans/2026-10-03-serve-closed.md`.
 
@@ -102,7 +102,7 @@ flowchart TD
 
 ### Task 1: Box source identity
 
-**Files:** [`scripts/sync-to-aegisbox.sh`](C:/Users/lande/Engineering_and_Development/isolation-layer/scripts/sync-to-aegisbox.sh) expand if tar path kept.
+**Files:** [`scripts/sync-to-aegisbox.sh`](<repo-root>/scripts/sync-to-aegisbox.sh) expand if tar path kept.
 
 - [ ] **Step 1:** On aegisbox, checkout/sync exact `MERGED_HEAD` (prefer git; tar only if private).
 - [ ] **Step 2:** `git rev-parse HEAD` host==box OR full load-bearing sha256 manifest zero-diff (include `serve.rs`, unit, Cargo.lock, scripts).
@@ -178,7 +178,7 @@ flowchart TD
 - [ ] **Step 1:** Explicit Landen GO for enable.
 - [ ] **Step 2:** `systemctl enable` + reboot.
 - [ ] **Step 3:** Post-boot: active+enabled, env pins, runtime exe hash == release artifact, one socket prove, tip growth, residue zero.
-- [ ] **Step 4:** Write [`docs/RECEIPT-SERVE-CLOSED-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/RECEIPT-SERVE-CLOSED-2026-10-03.md) with MERGED_HEAD, hashes, PIN, FINAL_TIP, kill-list table, systemd-on, residuals (uid-only, unattested, inspector OOB, sudo ALL, FALSE-ALLOWs).
+- [ ] **Step 4:** Write [`docs/RECEIPT-SERVE-CLOSED-2026-10-03.md`](<repo-root>/docs/RECEIPT-SERVE-CLOSED-2026-10-03.md) with MERGED_HEAD, hashes, PIN, FINAL_TIP, kill-list table, systemd-on, residuals (uid-only, unattested, inspector OOB, sudo ALL, FALSE-ALLOWs).
 - [ ] **Step 5:** Deepen `serve-closed-parity.sh` / frontier checks; SPEAK tip dest-sync to FINAL_TIP only; career retest; **no second prove after tip sync**.
 - [ ] **Step 6:** Bump remainder: Serve-closed closed; peercred/grant residual open for four_plane.
 
