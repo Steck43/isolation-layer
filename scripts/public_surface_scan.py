@@ -401,10 +401,17 @@ def scan_tree(root: Path, entries: list[Entry]) -> tuple[int, list[str]]:
             for hit in path_hits:
                 hits.append(f"{shown}: path: {hit}")
             full = root / rel
-            if full.is_symlink() or not full.is_file():
-                data = os.readlink(full).encode() if full.is_symlink() else b""
-            else:
+            if full.is_symlink():
+                data = os.fsencode(os.readlink(full))
+            elif full.is_file():
                 data = full.read_bytes()
+            else:
+                # Missing from the worktree, or a directory or device: never
+                # scan it as empty bytes.
+                hits.append(
+                    f"<tracked file #{number}>: not a regular file in the worktree"
+                )
+                continue
             for hit in scan_bytes(data, entries):
                 hits.append(f"{shown}: {hit}")
         except Exception as exc:  # fail closed without echoing content
