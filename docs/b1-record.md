@@ -6,7 +6,7 @@ Host: `<box-host>` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec:
 
 | Check | Result |
 |---|---|
-| `/dev/kvm` present, rw, user in `kvm` | **MATCH** — `crw-rw----+ root kvm`; `isolation` in group `kvm` (gid 992) |
+| `/dev/kvm` present, rw, user in `kvm` | **MATCH**, `crw-rw----+ root kvm`; `isolation` in group `kvm` (gid 992) |
 | `/dev/vhost-vsock` present | **MATCH** — `crw-rw---- root kvm` |
 | Kernel version | **MATCH** — `7.0.0-27-generic` (≥ 5.10) |
 | Virtualization flag | **MATCH** — `svm` in `/proc/cpuinfo` |

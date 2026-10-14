@@ -56,7 +56,7 @@ isProject: false
 
 **Primary recommendation:** Serve-closed is the correct next done-bar after merges.
 
-**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens the manager account's drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1–5, 8–9 must be green before enable.
+**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens the manager account's drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1-5, 8-9 must be green before enable.
 
 ```mermaid
 flowchart TD
@@ -73,14 +73,14 @@ flowchart TD
 
 ## File map (Serve-closed wave)
 
-- Modify: [`crates/isolation-manager/src/serve.rs`](<repo-root>/crates/isolation-manager/src/serve.rs) — return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
-- Modify: [`deploy/systemd/isolation-manager.service`](<repo-root>/deploy/systemd/isolation-manager.service) — drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
+- Modify: [`crates/isolation-manager/src/serve.rs`](<repo-root>/crates/isolation-manager/src/serve.rs), return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
+- Modify: [`deploy/systemd/isolation-manager.service`](<repo-root>/deploy/systemd/isolation-manager.service), drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
 - Create: `deploy/systemd/isolation-manager.service.d/continuity.conf.example` — `REQUIRE_ANCESTOR=` + `AEGIS_JAILER_SHA256=` placeholders.
 - Create: `scripts/serve-uds-prove.sh` — one-shot socket prove client (valid / bad JSON / unknown cmd / dual client).
 - Create: `scripts/serve-closed-parity.sh` — deepen parity: active/enabled/socket mode/runtime exe hash.
 - Create: `docs/RECEIPT-SERVE-CLOSED-2026-10-03.md` — final destination receipt.
-- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](<repo-root>/docs/REMAINDER-SPINE1-2026-10-03.md) — tip `b036fb0f…` / harden proved; Serve status; peercred residual.
-- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](<repo-root>/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md) — Serve rows.
+- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](<repo-root>/docs/REMAINDER-SPINE1-2026-10-03.md), tip `b036fb0f…` / harden proved; Serve status; peercred residual.
+- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](<repo-root>/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md), Serve rows.
 - Modify: SPEAK Live box line only after last serve prove tip (T7-class dest-sync; no second prove after sync).
 - Also write plan copy on execute to `isolation-layer/docs/superpowers/plans/2026-10-03-serve-closed.md`.
 

@@ -30,7 +30,7 @@ EOF
 sudo install -o root -g root -m 0644 /tmp/continuity.conf \
   /etc/systemd/system/isolation-manager.service.d/continuity.conf
 sudo systemctl daemon-reload
-# is-enabled exits 1 when disabled — do not trip set -e
+# is-enabled exits 1 when disabled, do not trip set -e
 en=$(systemctl is-enabled isolation-manager.service 2>&1 || true)
 echo SYS_EN=$en
 test "$en" = "disabled"
@@ -48,7 +48,7 @@ import socket
 s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
     s.connect("/var/lib/isolation-manager/isolation-manager.sock")
-    raise SystemExit("nobody connected — fail")
+    raise SystemExit("nobody connected, fail")
 except Exception as e:
     print("NOBODY_DENIED", type(e).__name__)
 PY

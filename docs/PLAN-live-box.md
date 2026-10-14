@@ -13,7 +13,7 @@ Approved-by-ask: Landen 2026-10-03 (stop parking the box as a label; want it bui
 - **Atoms enforce / judge apply:** still Landen GO after would-deny adjudication on tester. Not bundled into first done line.
 - **First campaign done (Landen chose A):** Charter/spec this sitting, then execute live-box + tester observe + suite FALSE-ALLOW growth. No atoms enforce in the first done line. Career lab SPEAK/gateway/wall stays parallel (CC verify wall); not a gate on this program.
 - **Council 2026-10-03:** six coarse todos ≠ full coverage. Expanded plan SoT: `~/.cursor/plans/four-plane_program_a_13a585ba.plan.md` (W0–W6, join schema, remainder register, SPEAK unlock = prove exit 0 only).
-- **Charter (approved execute 2026-10-03):** `<private-archive>/specs/2026-10-03-four-plane-spine-design.md` — Frame, locks, join schema, remainder, branch names, hop/socket decisions. Landen GO = implement order on that plan.
+- **Charter (approved execute 2026-10-03):** `<private-archive>/specs/2026-10-03-four-plane-spine-design.md`, Frame, locks, join schema, remainder, branch names, hop/socket decisions. Landen GO = implement order on that plan.
 
 ---
 

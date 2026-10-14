@@ -19,7 +19,7 @@ Profile: `~/.hermes/profiles/tester`
 ## Negatives (W2.4 / W2.5)
 
 - Honcho tools not on allowlist → floor deny if invoked (no grant).
-- Allowlist canary paths only under `~/aegis-tester/workspace/**` and `$HERMES_HOME/notes/**` — `/etc/passwd`, `../.bashrc`, `/vault` remain outside (P4 harness negatives still the prove path).
+- Allowlist canary paths only under `~/aegis-tester/workspace/**` and `$HERMES_HOME/notes/**`, `/etc/passwd`, `../.bashrc`, `/vault` remain outside (P4 harness negatives still the prove path).
 - `hermes -p tester -z`: **not re-run this sitting** — G-18 xAI re-login may still block; Landen if CLI fails.
 
 ## Box-claim HOLD (W4.1)
