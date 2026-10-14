@@ -722,6 +722,18 @@ def test_raw_receipts_keep_their_produced_bytes() -> None:
     assert raw.count(b"\r\n") == raw.count(b"\n") > 0, "line endings were normalised"
 
 
+def test_receipt_notes_record_the_renamed_environment_key() -> None:
+    raw = (ROOT / "receipts" / "raw" / "step12b-prove.json").read_text(encoding="utf-8")
+    assert '"BOX_LIVE_PROVE"' in raw
+    for doc in (
+        "receipts/STEP-12b-2026-10-09.md",
+        "receipts/T-REP-06-BOXENTRY-LIVE-2026-10-09.md",
+    ):
+        text = (ROOT / doc).read_text(encoding="utf-8")
+        assert "renamed one environment key" in text, doc
+        assert "`BOX_LIVE_PROVE`" in text, doc
+
+
 def test_redacted_digests_match_the_files_they_name() -> None:
     pairs = {
         "receipts/STEP-12b-2026-10-09.md": "receipts/raw/step12b-prove.json",

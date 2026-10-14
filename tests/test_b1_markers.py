@@ -61,6 +61,15 @@ def test_an_echo_with_no_marker_lines_is_not_invisible() -> None:
     assert not b1.host_home_is_invisible(f"{ECHO_PROBE}ubuntu\n", HOMES)
 
 
+def test_a_host_home_name_in_the_listing_is_visible() -> None:
+    # Carried from the scrub branch: the manager account's home listed in the
+    # guest means the host home is visible, even beside the absent marker.
+    assert not b1.host_home_is_invisible(
+        f"{ECHO_PROBE}isolation-manager\nNO_HOST_HOME_3\n", HOMES
+    )
+    assert not b1.host_home_is_invisible(f"{ECHO_PROBE}op1\nNO_HOST_HOME_3\n", HOMES)
+
+
 def test_the_vmm_marker_counts_only_on_its_own_line() -> None:
     assert not b1.no_vmm_procs(ECHO_VMM)
     assert b1.no_vmm_procs(f"{ECHO_VMM}NO_VMM_PROCS\n")
