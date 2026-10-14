@@ -39,26 +39,68 @@ def resolved_host_homes(manager_home: str | None = None) -> list[str]:
     return host_homes(passwd.read_text() if passwd.is_file() else "", home)
 
 
+HOST_HOME_VISIBLE = "HOST_HOME_VISIBLE"
+NO_HOST_HOME = "NO_HOST_HOME"
+NO_VMM_PROCS = "NO_VMM_PROCS"
+
+
+def typed_marker(marker: str) -> str:
+    """The marker as typed: an empty quote pair after the first underscore.
+
+    The shell prints the plain marker, but the typed text, which the serial
+    console echoes back, never contains it.
+    """
+    head, sep, tail = marker.partition("_")
+    return f'{head}_""{tail}' if sep else f'""{marker}'
+
+
+def has_marker_line(transcript: str, marker: str) -> bool:
+    """True only when a line is exactly the marker; echoed command text never counts."""
+    return any(line.strip() == marker for line in transcript.splitlines())
+
+
+def no_vmm_procs(transcript: str) -> bool:
+    return has_marker_line(transcript, NO_VMM_PROCS)
+
+
 def host_invisibility_probe(homes: list[str] | None = None) -> str:
     """List the guest home root, then test every host home by path."""
     homes = resolved_host_homes() if homes is None else homes
     quoted = " ".join("'" + h.replace("'", "'\\''") + "'" for h in homes)
     return (
         "ls -1 /home 2>&1; v=0; "
-        f'for h in {quoted}; do if [ -e "$h" ]; then v=1; echo HOST_HOME_VISIBLE; fi; done; '
-        f'if [ "$v" = 0 ]; then echo NO_HOST_HOME_{len(homes)}; fi'
+        f'for h in {quoted}; do if [ -e "$h" ]; then v=1; '
+        f"echo {typed_marker(HOST_HOME_VISIBLE)}; fi; done; "
+        f'if [ "$v" = 0 ]; then echo {typed_marker(NO_HOST_HOME)}_{len(homes)}; fi'
+    )
+
+
+def vmm_probe() -> str:
+    """List VMM processes in the guest, or print the marker when there are none."""
+    return (
+        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep "
+        f"|| echo {typed_marker(NO_VMM_PROCS)}"
     )
 
 
 def host_home_is_invisible(transcript: str, homes: list[str]) -> bool:
     """Mirrors prove.rs: fail closed unless the full check ran and saw nothing."""
     lines = [line.strip() for line in transcript.splitlines()]
-    if not homes or "HOST_HOME_VISIBLE" in transcript:
+    if not homes or HOST_HOME_VISIBLE in lines:
         return False
-    if f"NO_HOST_HOME_{len(homes)}" not in lines:
+    if f"{NO_HOST_HOME}_{len(homes)}" not in lines:
         return False
     names = [Path(h).name for h in homes]
     return all(name and name not in lines for name in names)
+
+
+def spot_checks(checks: dict[str, str], homes: list[str]) -> dict[str, bool]:
+    """Verdicts from the guest transcripts keyed kvm, vmm and guest_home."""
+    return {
+        "kvm_absent": "cannot access '/dev/kvm'" in checks["kvm"],
+        "host_invisible": no_vmm_procs(checks["vmm"])
+        and host_home_is_invisible(checks["guest_home"], homes),
+    }
 
 
 BIN = ROOT / "bin"
@@ -373,22 +415,25 @@ def run_prove(mode: str) -> int:
     homes = resolved_host_homes()
     home_probe = host_invisibility_probe(homes)
     checks: dict[str, str] = {}
-    for cmd in [
-        "ls /dev/kvm 2>&1",
-        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS",
-        home_probe,
-        "uname -a",
+    by_key: dict[str, str] = {}
+    for key, cmd in [
+        ("kvm", "ls /dev/kvm 2>&1"),
+        ("vmm", vmm_probe()),
+        ("guest_home", home_probe),
+        ("uname", "uname -a"),
     ]:
         assert ctx.proc.stdin is not None
         ctx.proc.stdin.write(cmd + "\n")
         ctx.proc.stdin.flush()
         chunk = drain_for(out_q, 3)
         checks[cmd] = chunk
+        by_key[key] = chunk
         print(f"=== guest: {cmd} ===")
         print(chunk)
 
-    invisible = host_home_is_invisible(checks[home_probe], homes)
-    print(f"spot_check_host_homes_invisible={invisible} homes={len(homes)}")
+    verdicts = spot_checks(by_key, homes)
+    print(f"spot_check_kvm_absent={verdicts['kvm_absent']}")
+    print(f"spot_check_host_invisible={verdicts['host_invisible']} homes={len(homes)}")
 
     vsock_result: dict = {"ok": False}
     vsock_thread = threading.Thread(
@@ -421,12 +466,13 @@ def run_prove(mode: str) -> int:
         "time_to_workload_ms": round(t_work * 1000, 1),
         "vsock_roundtrip": vsock_result,
         "checks": checks,
+        "spot_checks": verdicts,
     }
     (run_dir / "b1_results.json").write_text(json.dumps(results, indent=2))
 
     teardown(ctx)
     print(f"run_dir={run_dir}")
-    return 0
+    return 0 if all(verdicts.values()) else 1
 
 
 def main() -> int:

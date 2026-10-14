@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The guest spot checks read every marker only from a line that is exactly that marker. The serial console echoes each typed command, so the echoed probe used to satisfy the no-VMM check and always tripped the visible-home check. The probes now type each marker with an empty quote pair inside it, so the typed text never contains the marker the shell prints. This holds in prove.rs and scripts/b1-prove.py; b1-prove.py records the verdicts and exits 1 when a spot check fails.
 - The tests job checks out full history, so a hash pin marked historical is matched against past committed versions in CI as it is locally. On a shallow clone the pin check now fails with one named problem instead of reporting digest mismatches.
 - Drop the Dependabot `pip` ecosystem on this roof. There is no `requirements.txt` or `pyproject.toml`, so the weekly pip job failed with `dependency_file_not_found` (run `37385460556`).
 

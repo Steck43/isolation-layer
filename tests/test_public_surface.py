@@ -975,7 +975,9 @@ def test_guest_probe_uses_the_resolved_home(monkeypatch: pytest.MonkeyPatch) -> 
     probe = module.host_invisibility_probe(module.host_homes("", home))
     assert "ls -1 " + SL + HOME in probe
     assert home in probe
-    assert "HOST_HOME_VISIBLE" in probe
+    # The typed probe carries each marker only in its typed form, never plain.
+    assert module.typed_marker("HOST_HOME_VISIBLE") in probe
+    assert "HOST_HOME_VISIBLE" not in probe
     assert "<manager-home>" not in probe
 
 
@@ -1036,7 +1038,8 @@ def test_guest_probe_covers_every_human_home() -> None:
     probe = b1.host_invisibility_probe(homes)
     for home in homes:
         assert "'" + home + "'" in probe
-    assert "NO_HOST_HOME_3" in probe
+    assert b1.typed_marker("NO_HOST_HOME") + "_3" in probe
+    assert "NO_HOST_HOME" not in probe
 
 
 def test_a_visible_operator_home_fails_the_probe_verdict() -> None:
@@ -1059,7 +1062,10 @@ def test_python_and_rust_probes_agree() -> None:
         encoding="utf-8"
     )
     python = (ROOT / "scripts" / "b1-prove.py").read_text(encoding="utf-8")
-    for marker in ("NO_HOST_HOME_", "HOST_HOME_VISIBLE", "uid != 65534", "/nologin"):
+    for name in ("HOST_HOME_VISIBLE", "NO_HOST_HOME", "NO_VMM_PROCS"):
+        assert f'pub const {name}: &str = "{name}";' in rust, name
+        assert f'{name} = "{name}"' in python, name
+    for marker in ("uid != 65534", "/nologin"):
         assert marker in rust and marker in python, marker
     assert "uid >= 1000" in rust and "uid >= 1000" in python
     # The spot check reaches the verdict only through the wrapper that fails
