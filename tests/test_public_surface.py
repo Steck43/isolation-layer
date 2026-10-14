@@ -257,6 +257,50 @@ def test_built_in_rule_hits_without_the_secret(rule: str, text: str) -> None:
     assert rule in scan.scan_bytes(("prefix " + text + " suffix").encode(), [])
 
 
+LOOK_ALIKE = str.maketrans({"a": "а", "e": "е", "o": "о", "p": "р", "c": "с"})
+
+
+def _continued(text: str) -> str:
+    half = len(text) // 2
+    return 'X = "' + text[:half] + '" ' + BS + '\n    "' + text[half:] + '"'
+
+
+# T27: the built-in rules see through the same forms as a private entry.
+ENCODINGS = {
+    "plain": lambda s: s.encode(),
+    "percent": lambda s: "".join(f"%{b:02X}" for b in s.encode()).encode(),
+    "double-percent": lambda s: "".join(f"%25{b:02X}" for b in s.encode()).encode(),
+    "unicode-escape": lambda s: "".join(BS + f"u{ord(c):04x}" for c in s).encode(),
+    "html-entity": lambda s: "".join(f"&#x{ord(c):x};" for c in s).encode(),
+    "fullwidth": lambda s: "".join(
+        chr(ord(c) + 0xFEE0) if 0x21 <= ord(c) <= 0x7E else c for c in s
+    ).encode(),
+    "zero-width": lambda s: "​".join(s).encode(),
+    "look-alike": lambda s: s.translate(LOOK_ALIKE).encode(),
+    "utf-16-le": lambda s: s.encode("utf-16-le"),
+    "utf-16-be": lambda s: s.encode("utf-16-be"),
+    "utf-16-bom": lambda s: codecs.BOM_UTF16_LE + s.encode("utf-16-le"),
+    "utf-32-le": lambda s: s.encode("utf-32-le"),
+    "utf-32-be-bom": lambda s: codecs.BOM_UTF32_BE + s.encode("utf-32-be"),
+    "base64": lambda s: base64.b64encode(s.encode()),
+    "base64-urlsafe-unpadded": lambda s: base64.urlsafe_b64encode(s.encode()).rstrip(
+        b"="
+    ),
+    "hex": lambda s: s.encode().hex().encode(),
+    "line-continuation": lambda s: _continued(s).encode(),
+    "binary": lambda s: b"\x89PNG\x00\x00" + s.encode() + b"\x00\xff",
+}
+
+
+@pytest.mark.parametrize("encoding", sorted(ENCODINGS))
+@pytest.mark.parametrize(("rule", "text"), RULE_PARAMS)
+def test_built_in_rules_see_through_every_encoding(
+    rule: str, text: str, encoding: str
+) -> None:
+    data = b"prefix " + ENCODINGS[encoding](text) + b" suffix"
+    assert rule in scan.scan_bytes(data, []), (rule, encoding)
+
+
 def test_every_built_in_rule_has_cases() -> None:
     assert set(RULE_CASES) == set(scan.RULES)
 

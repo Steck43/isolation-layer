@@ -319,12 +319,38 @@ def _unescape(text: str) -> str:
     return _ESC.sub(one, text)
 
 
+_DECODERS = (unquote, _unescape, html.unescape)
+MAX_ROUNDS = 4
+
+
+def _decoded_closure(seed: str) -> list[str]:
+    """``seed`` and every text the decoders reach from it, in any order."""
+    seen = {seed}
+    out = [seed]
+    frontier = [seed]
+    for _ in range(MAX_ROUNDS):
+        later = []
+        for form in frontier:
+            for decode in _DECODERS:
+                found = normalise(decode(form))
+                if found not in seen:
+                    seen.add(found)
+                    out.append(found)
+                    later.append(found)
+        frontier = later
+    return out
+
+
 def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[str]]:
     """(decoded forms, joined forms, obfuscated forms) of one text."""
     base = normalise(text)
-    once = unquote(base)
-    forms = [text, once, unquote(once), _unescape(base), html.unescape(base)]
-    joined = [_CONTINUATION.sub("", base)]
+    # A line continuation is a join the language itself performs, so every
+    # rule reads the continued text, not only the path and private rules.
+    forms = [text, *_decoded_closure(base)]
+    continued = _CONTINUATION.sub("", base)
+    if continued != base:
+        forms += _decoded_closure(continued)
+    joined: list[str] = []
     literals = [_drop_allowed(m.group(1)[1:-1]) for m in _LITERAL.finditer(base)]
     for size in range(2, 5):
         for i in range(len(literals) - size + 1):
@@ -332,7 +358,10 @@ def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[st
             joined.extend(joiner.join(window) for joiner in _JOINERS)
     obfuscated = [base[::-1], codecs.encode(base, "rot13")]
     if depth < MAX_DEPTH:
-        for decoded in _decoded_tokens(base) + _decoded_tokens(once):
+        tokens = itertools.chain.from_iterable(
+            _decoded_tokens(form) for form in dict.fromkeys(forms[1:])
+        )
+        for decoded in dict.fromkeys(tokens):
             more, more_joined, more_obfuscated = text_forms(decoded, depth + 1)
             forms += more
             joined += more_joined
