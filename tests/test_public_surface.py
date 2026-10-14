@@ -681,7 +681,14 @@ def test_scan_job_loads_the_scanner_from_base_into_a_temp_dir() -> None:
     )
     assert "has no scanner; refusing to run the pull request copy" in job
     assert 'python3 -I -S "${RUNNER_TEMP}/pss/public_surface_scan.py"' in job
-    assert "--expect-entries 13" in job
+
+
+# The expected entry count comes from the base copy of the scanner, so the pull
+# request under review cannot change how many entries the list must hold.
+def test_scan_job_takes_the_entry_count_from_the_base_scanner() -> None:
+    job = _job("public-surface")
+    assert "--expect-entries" not in job
+    assert "EXPECTED_ENTRIES" not in job
 
 
 def test_scan_job_installs_nothing_and_is_the_only_holder_of_the_secret() -> None:

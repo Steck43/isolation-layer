@@ -301,4 +301,4 @@ jobs:
             echo "::error::LEAK_DENYLIST is not available to this run (fork or missing secret); failing closed"
             exit 1
           fi
-          python3 -I -S "${RUNNER_TEMP}/pss/public_surface_scan.py" --root "${GITHUB_WORKSPACE}" --expect-entries 13
+          python3 -I -S "${RUNNER_TEMP}/pss/public_surface_scan.py" --root "${GITHUB_WORKSPACE}"
