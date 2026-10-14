@@ -61,7 +61,7 @@ Rust workspace, six crates:
 
 | Crate | Role |
 |---|---|
-| `isolation-manager` | Launch, prove (receipt bound to call id plus gate and atoms digests), inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). Host entry `scripts/box_entry.py` emits the CI receipt contract by default; with `AEGISBOX_PROVE=1` it boots the same prove path under the caller `tool_call_id`. |
+| `isolation-manager` | Launch, prove (receipt bound to call id plus gate and atoms digests), inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). Host entry `scripts/box_entry.py` emits the CI receipt contract by default; with `BOX_LIVE_PROVE=1` it boots the same prove path under the caller `tool_call_id`. |
 | `jailer-launch` | Jailer invocation and privilege drop. |
 | `vestibule` | Seccomp allowlist, **default KILL**. Landlock filesystem allowlist. |
 | `inspector` | Post-run verdict and host-disposition checks. |
@@ -87,7 +87,7 @@ Two things this repository will not claim:
 
 The probe suite is **fail-first**: every probe has a named negative control, and a probe that cannot be made to fail on purpose does not count as passing. Host-to-VM is treated as untrusted-input surface and carries its own probe class, because introducing the VM introduced that boundary.
 
-Step 10 (`scripts/step10_live_harness.py`) joins a real capability-gate decision and a real atoms evaluate into the prove bind args on one call id. Unit tests recompute those digests without booting. Live jailer prove on aegisbox is gated on `AEGISBOX_PROVE=1`. Step 10b re-ran that prove on a clean `main` tip checkout (receipt `receipts/STEP-10b-2026-10-09.md`). `scripts/box_entry.py` remains the CI receipt contract and does not boot the jailer. `always_invoked` stays false.
+Step 10 (`scripts/step10_live_harness.py`) joins a real capability-gate decision and a real atoms evaluate into the prove bind args on one call id. Unit tests recompute those digests without booting. Live jailer prove on the box is gated on `BOX_LIVE_PROVE=1`. Step 10b re-ran that prove on a clean `main` tip checkout (receipt `receipts/STEP-10b-2026-10-09.md`). `scripts/box_entry.py` remains the CI receipt contract and does not boot the jailer. `always_invoked` stays false.
 
 ## Status
 

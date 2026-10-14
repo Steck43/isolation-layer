@@ -63,7 +63,7 @@ pub fn run(socket_path: PathBuf) -> i32 {
 
     // Tighten umask only around bind so the socket starts 0600. Restore before
     // any jailer/Firecracker child inherits this process — a sticky 077 umask
-    // made api.sock invisible to landen and timed out every serve prove.
+    // made api.sock invisible to the manager account and timed out every serve prove.
     let prev_umask = unsafe { libc::umask(0o077) };
     let listener = match UnixListener::bind(&socket_path) {
         Ok(l) => l,

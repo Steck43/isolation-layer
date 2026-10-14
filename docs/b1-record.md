@@ -1,12 +1,12 @@
 # B1 Record — Firecracker toolchain and first microVM boot
 
-Host: `aegis-box` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec: `isolation-layer-build-spec-v1.5.md`.
+Host: `<box-host>` (Hyper-V nested Linux VM, AMD SVM). Branch: `scaffold`. Spec: `isolation-layer-build-spec-v1.5.md`.
 
 ## 1. Substrate confirmation
 
 | Check | Result |
 |---|---|
-| `/dev/kvm` present, rw, user in `kvm` | **MATCH** — `crw-rw----+ root kvm`; `landen` in group `kvm` (gid 992) |
+| `/dev/kvm` present, rw, user in `kvm` | **MATCH**, `crw-rw----+ root kvm`; `isolation` in group `kvm` (gid 992) |
 | `/dev/vhost-vsock` present | **MATCH** — `crw-rw---- root kvm` |
 | Kernel version | **MATCH** — `7.0.0-27-generic` (≥ 5.10) |
 | Virtualization flag | **MATCH** — `svm` in `/proc/cpuinfo` |
@@ -99,8 +99,8 @@ VS_EXIT=0
 root@ubuntu-fc-uvm:~# ps aux | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS
 NO_VMM_PROCS
 
-root@ubuntu-fc-uvm:~# ls /home/landen 2>&1 || echo NO_HOST_HOME
-ls: cannot access '/home/landen': No such file or directory
+root@ubuntu-fc-uvm:~# ls <manager-home> 2>&1 || echo NO_HOST_HOME
+ls: cannot access '<manager-home>': No such file or directory
 NO_HOST_HOME
 ```
 
@@ -108,7 +108,7 @@ NO_HOST_HOME
 
 ## 5. BS-00 boot baseline (nested Hyper-V host)
 
-Measured on `aegis-box` (L1 Firecracker guest under Hyper-V), cold boot, no snapshot:
+Measured on `<box-host>` (L1 Firecracker guest under Hyper-V), cold boot, no snapshot:
 
 | Metric | Direct (`b1-direct-1783643482`) | Jailed (`b1-jailed-1783644322`) |
 |---|---|---|
@@ -131,6 +131,10 @@ Latest run artifacts: `run/b1-jailed-1783644322/b1_results.json`, `run/b1-direct
 | MicroVM cold boot under jailer | **RECORD** |
 | BS-00 cold-boot numbers (direct + jailed) | **RECORD** |
 | Warm snapshot pool | **VISION** (not in B1 scope) |
+
+Host paths in `docs/b1-results.json` were redacted on 2026-10-13.
+Original sha256 `9fc821db88c10d31c11058679ec2b8df3e7484142aa1f46120951c8aa206ca9f`.
+Redacted sha256 `03004d779c2c58ef503cf10cb5280b8e7dd7f9f6f731e997866cadb6872bb9e7`.
 
 ## 7. Stop
 

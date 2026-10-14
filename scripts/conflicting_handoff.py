@@ -26,7 +26,7 @@ def launch(prove: Path, residue: Path) -> int:
     if boot != 0:
         return boot
     env = os.environ.copy()
-    env["AEGISBOX_PROVE"] = "1"
+    env["BOX_LIVE_PROVE"] = "1"
     return subprocess.call([sys.executable, str(residue)], env=env)
 
 

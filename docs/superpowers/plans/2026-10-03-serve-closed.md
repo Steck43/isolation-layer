@@ -1,6 +1,6 @@
 ---
 name: Serve-closed after merge
-overview: "After topic commits/pushes/merges land, run a falsifiable Serve-closed campaign on aegisbox: freeze identity, re-prove Box continuity, exercise foreground UDS serve, then Landen-gated systemd start/enable/reboot with Codex kill-list greens. Not four_plane. Not atoms enforce."
+overview: "After topic commits/pushes/merges land, run a falsifiable Serve-closed campaign on the box: freeze identity, re-prove Box continuity, exercise foreground UDS serve, then Landen-gated systemd start/enable/reboot with Codex kill-list greens. Not four_plane. Not atoms enforce."
 todos:
   - id: m0-merge
     content: T0 Commit/push/merge freeze; record MERGED_HEAD + binary SHAs
@@ -30,7 +30,7 @@ isProject: false
 
 > **For agentic workers:** Use subagent-driven-development or executing-plans task-by-task. Steps use checkbox tracking.
 
-**Goal:** After `spine1/live-box` (and related topic) commits/pushes/merges land, honestly claim **Serve-closed** on aegisbox with destination evidence, without reopening Box-closed or claiming four_plane / atoms enforce.
+**Goal:** After `spine1/live-box` (and related topic) commits/pushes/merges land, honestly claim **Serve-closed** on the box with destination evidence, without reopening Box-closed or claiming four_plane / atoms enforce.
 
 **Architecture:** Scaffold identity and fail-closed config before any long-lived socket. Foreground UDS prove first (transport), then systemd start-without-enable (sandbox), then Landen-gated enable+reboot. Chain stays tip-anchored (not attested). Inspector stays out of band.
 
@@ -56,7 +56,7 @@ isProject: false
 
 **Primary recommendation:** Serve-closed is the correct next done-bar after merges.
 
-**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens landen-uid drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1–5, 8–9 must be green before enable.
+**Strongest dissent (Opus):** long-lived socket in front of NOPASSWD root helper widens the manager account's drive of jailer; caller identity (SO_PEERCRED / grant) arguably before Serve. **Plan resolution:** Serve-closed claim language is **uid-only socket** (not “unauthorized peers refused”); peercred is a named residual for four_plane, not a Serve blocker. Kill-list items 1-5, 8-9 must be green before enable.
 
 ```mermaid
 flowchart TD
@@ -73,14 +73,14 @@ flowchart TD
 
 ## File map (Serve-closed wave)
 
-- Modify: [`crates/isolation-manager/src/serve.rs`](C:/Users/lande/Engineering_and_Development/isolation-layer/crates/isolation-manager/src/serve.rs) — return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
-- Modify: [`deploy/systemd/isolation-manager.service`](C:/Users/lande/Engineering_and_Development/isolation-layer/deploy/systemd/isolation-manager.service) — drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
+- Modify: [`crates/isolation-manager/src/serve.rs`](<repo-root>/crates/isolation-manager/src/serve.rs), return `jail_id`+`tip` in JSON; bound read; optional write timeout; document uid-only.
+- Modify: [`deploy/systemd/isolation-manager.service`](<repo-root>/deploy/systemd/isolation-manager.service), drop-in friendly pins; fix ExecStartPre so `REQUIRE_ANCESTOR` is required via EnvironmentFile/drop-in (no shell expansion surprise).
 - Create: `deploy/systemd/isolation-manager.service.d/continuity.conf.example` — `REQUIRE_ANCESTOR=` + `AEGIS_JAILER_SHA256=` placeholders.
 - Create: `scripts/serve-uds-prove.sh` — one-shot socket prove client (valid / bad JSON / unknown cmd / dual client).
 - Create: `scripts/serve-closed-parity.sh` — deepen parity: active/enabled/socket mode/runtime exe hash.
 - Create: `docs/RECEIPT-SERVE-CLOSED-2026-10-03.md` — final destination receipt.
-- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/REMAINDER-SPINE1-2026-10-03.md) — tip `b036fb0f…` / harden proved; Serve status; peercred residual.
-- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md) — Serve rows.
+- Modify: [`docs/REMAINDER-SPINE1-2026-10-03.md`](<repo-root>/docs/REMAINDER-SPINE1-2026-10-03.md), tip `b036fb0f…` / harden proved; Serve status; peercred residual.
+- Modify: [`docs/FRONTIER-SHIP-CHECKS-2026-10-03.md`](<repo-root>/docs/FRONTIER-SHIP-CHECKS-2026-10-03.md), Serve rows.
 - Modify: SPEAK Live box line only after last serve prove tip (T7-class dest-sync; no second prove after sync).
 - Also write plan copy on execute to `isolation-layer/docs/superpowers/plans/2026-10-03-serve-closed.md`.
 
@@ -102,9 +102,9 @@ flowchart TD
 
 ### Task 1: Box source identity
 
-**Files:** [`scripts/sync-to-aegisbox.sh`](C:/Users/lande/Engineering_and_Development/isolation-layer/scripts/sync-to-aegisbox.sh) expand if tar path kept.
+**Files:** [`scripts/sync-to-box.sh`](<repo-root>/scripts/sync-to-box.sh) expand if tar path kept.
 
-- [ ] **Step 1:** On aegisbox, checkout/sync exact `MERGED_HEAD` (prefer git; tar only if private).
+- [ ] **Step 1:** On the box, checkout/sync exact `MERGED_HEAD` (prefer git; tar only if private).
 - [ ] **Step 2:** `git rev-parse HEAD` host==box OR full load-bearing sha256 manifest zero-diff (include `serve.rs`, unit, Cargo.lock, scripts).
 - [ ] **Step 3:** `cargo test --workspace` + `cargo build --release -p jailer-launch -p isolation-manager` exit 0.
 
@@ -147,7 +147,7 @@ flowchart TD
 
 - [ ] **Step 1:** Implement response fields + read bound before allocating huge lines; cargo test/build.
 - [ ] **Step 2:** Foreground: `REQUIRE_ANCESTOR=$PIN AEGIS_JAILER_SHA256=<installed> ./target/release/isolation-manager serve --socket $HOME/.local/state/aegis/isolation-manager.sock`
-- [ ] **Step 3:** Socket `stat` mode 0600 owner landen.
+- [ ] **Step 3:** Socket `stat` mode 0600 owner isolation.
 - [ ] **Step 4:** Bad JSON + unknown cmd → `ok:false`; chain tip unchanged.
 - [ ] **Step 5:** Valid prove JSON → `ok:true`, tip advances, verify PASS, residue empty.
 - [ ] **Step 6:** Dual-client / slow-client starvation drill (Codex #4): second prove must succeed within declared bound or code-fix before enable.
@@ -178,7 +178,7 @@ flowchart TD
 - [ ] **Step 1:** Explicit Landen GO for enable.
 - [ ] **Step 2:** `systemctl enable` + reboot.
 - [ ] **Step 3:** Post-boot: active+enabled, env pins, runtime exe hash == release artifact, one socket prove, tip growth, residue zero.
-- [ ] **Step 4:** Write [`docs/RECEIPT-SERVE-CLOSED-2026-10-03.md`](C:/Users/lande/Engineering_and_Development/isolation-layer/docs/RECEIPT-SERVE-CLOSED-2026-10-03.md) with MERGED_HEAD, hashes, PIN, FINAL_TIP, kill-list table, systemd-on, residuals (uid-only, unattested, inspector OOB, sudo ALL, FALSE-ALLOWs).
+- [ ] **Step 4:** Write [`docs/RECEIPT-SERVE-CLOSED-2026-10-03.md`](<repo-root>/docs/RECEIPT-SERVE-CLOSED-2026-10-03.md) with MERGED_HEAD, hashes, PIN, FINAL_TIP, kill-list table, systemd-on, residuals (uid-only, unattested, inspector OOB, sudo ALL, FALSE-ALLOWs).
 - [ ] **Step 5:** Deepen `serve-closed-parity.sh` / frontier checks; SPEAK tip dest-sync to FINAL_TIP only; career retest; **no second prove after tip sync**.
 - [ ] **Step 6:** Bump remainder: Serve-closed closed; peercred/grant residual open for four_plane.
 

@@ -12,7 +12,7 @@ Prove CLI: `--session-id` `--tool-call-id`
 
 ## Hop decision (W4.3)
 
-SSH `landen@aegisbox` from WSL → `isolation-manager prove --session-id … --tool-call-id …`. Documented in charter. Access: existing SSH key. No guest-driven host action.
+SSH `user@box` from WSL → `isolation-manager prove --session-id … --tool-call-id …`. Documented in charter. Access: existing SSH key. No guest-driven host action.
 
 ## Socket authn (W4.4)
 

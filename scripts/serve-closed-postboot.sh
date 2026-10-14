@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Run on aegisbox after landen-serve-closed-t5-t6.sh reboot.
+# Run on the box after serve-closed-t5-t6.sh reboot.
 set -euo pipefail
 cd "$HOME/isolation-layer"
-CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
-SOCK="$HOME/.local/state/aegis/isolation-manager.sock"
+CHAIN="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
+SOCK="/var/lib/isolation-manager/isolation-manager.sock"
 MGR="$HOME/isolation-layer/target/release/isolation-manager"
 
 en=$(systemctl is-enabled isolation-manager.service 2>&1 || true)
