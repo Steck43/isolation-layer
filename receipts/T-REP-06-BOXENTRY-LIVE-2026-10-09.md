@@ -14,6 +14,8 @@ with `BOX_LIVE_PROVE=1`.
   Original sha256 `e8fa518e42b4712597b100a10180d54226aba7854868a9f4aad65964f54dd882`.
   Redacted sha256 `46b93482ea1ec06f408a6974a3a5e561be2eaf272b5870a16e422f196bdb0b83`. The box host name was redacted on 2026-10-14 as well;
   line endings stay as produced (CRLF).
+  That redaction also renamed one environment key in the raw bytes: the key that carried the box host name
+  now reads `BOX_LIVE_PROVE`, the name the current code reads. The produced bytes used the old key.
 - Caller / prove id: `step12b-20261010T050553Z`
 - G3: caller id, gate digest, and atoms digest exactly match the
   harness-computed values.

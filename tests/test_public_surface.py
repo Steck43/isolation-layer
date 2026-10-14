@@ -599,3 +599,17 @@ def test_spire_issuer_takes_host_and_trust_domain_from_the_operator() -> None:
         env={k: v for k, v in os.environ.items() if not k.startswith("BOX_")},
     )
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# The redaction of the raw step12b receipt also renamed one environment key;
+# both receipt notes say so, and the raw bytes carry the renamed key.
+def test_receipt_notes_record_the_renamed_environment_key() -> None:
+    raw = (ROOT / "receipts" / "raw" / "step12b-prove.json").read_text(encoding="utf-8")
+    assert '"BOX_LIVE_PROVE"' in raw
+    for doc in (
+        "receipts/STEP-12b-2026-10-09.md",
+        "receipts/T-REP-06-BOXENTRY-LIVE-2026-10-09.md",
+    ):
+        text = (ROOT / doc).read_text(encoding="utf-8")
+        assert "renamed one environment key" in text, doc
+        assert "`BOX_LIVE_PROVE`" in text, doc
