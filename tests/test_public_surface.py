@@ -764,6 +764,11 @@ def past_digests(root: Path, rel: str) -> set[str]:
 
 
 def pin_problems(root: Path) -> list[str]:
+    shallow = subprocess.check_output(
+        ["git", "rev-parse", "--is-shallow-repository"], cwd=root, text=True
+    ).strip()
+    if shallow != "false":
+        return ["history is shallow; hash pins need the full history"]
     tracked = scan.tracked_files(root)
     problems: list[str] = []
     for rel in tracked:
@@ -872,6 +877,27 @@ def test_pin_check_resolves_and_fails_instead_of_skipping(
 ) -> None:
     problems = pin_problems(_pin_repo(tmp_path, record))
     assert (problems == []) is ok, problems
+
+
+# A historical pin can only be checked against full history; a shallow clone
+# must fail by name instead of reporting a mismatch or passing.
+def test_pin_check_fails_on_shallow_history(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    _pin_repo(src, f"`gate.rs` (historical) `{OLD}`")
+    assert pin_problems(src) == []
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", src.as_uri(), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+    problems = pin_problems(clone)
+    assert problems == ["history is shallow; hash pins need the full history"]
+
+
+def test_tests_job_checks_out_full_history() -> None:
+    assert "fetch-depth: 0" in _job("tests")
 
 
 def test_service_account_is_dedicated_and_home_is_protected() -> None:
