@@ -426,8 +426,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     let manager_home = manager_home_path();
     let commands = [
         "ls /dev/kvm 2>&1\n".to_string(),
-        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n"
-            .to_string(),
+        vmm_probe(),
         host_invisibility_probe(&manager_home),
     ];
     for cmd in commands {
@@ -566,7 +565,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
 
     let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
-    let no_vmm = serial.contains("NO_VMM_PROCS");
+    let no_vmm = no_vmm_procs(&serial);
     let no_home = host_home_is_invisible(&serial, &manager_home);
 
     println!("spot_check_kvm_absent={kvm_absent}");
@@ -621,13 +620,49 @@ pub fn shell_single_quote(value: &str) -> String {
 /// Guest probe: list `/home`, then test the manager account's resolved home.
 pub fn host_invisibility_probe(manager_home: &str) -> String {
     format!(
-        "ls -1 /home 2>&1; if [ -e {quoted} ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n",
-        quoted = shell_single_quote(manager_home)
+        "ls -1 /home 2>&1; if [ -e {quoted} ]; then echo {visible}; else echo {absent}; fi\n",
+        quoted = shell_single_quote(manager_home),
+        visible = typed_marker(HOST_HOME_VISIBLE),
+        absent = typed_marker(NO_HOST_HOME),
     )
 }
 
+pub const HOST_HOME_VISIBLE: &str = "HOST_HOME_VISIBLE";
+pub const NO_HOST_HOME: &str = "NO_HOST_HOME";
+pub const NO_VMM_PROCS: &str = "NO_VMM_PROCS";
+
+/// The marker as typed into the guest shell: an empty quote pair after the
+/// first underscore. The shell prints the plain marker, but the typed text,
+/// which the serial console echoes back, never contains it.
+pub fn typed_marker(marker: &str) -> String {
+    match marker.split_once('_') {
+        Some((head, tail)) => format!("{head}_\"\"{tail}"),
+        None => format!("\"\"{marker}"),
+    }
+}
+
+/// Guest probe: list VMM processes, or print the marker when there are none.
+pub fn vmm_probe() -> String {
+    format!(
+        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo {}\n",
+        typed_marker(NO_VMM_PROCS)
+    )
+}
+
+/// True only when some transcript line is exactly the marker after trimming.
+/// Echoed command text that merely contains the marker never counts.
+pub fn has_marker_line(transcript: &str, marker: &str) -> bool {
+    transcript.lines().any(|line| line.trim() == marker)
+}
+
+pub fn no_vmm_procs(transcript: &str) -> bool {
+    has_marker_line(transcript, NO_VMM_PROCS)
+}
+
 pub fn host_home_is_invisible(transcript: &str, manager_home: &str) -> bool {
-    if transcript.contains("HOST_HOME_VISIBLE") || !transcript.contains("NO_HOST_HOME") {
+    if has_marker_line(transcript, HOST_HOME_VISIBLE)
+        || !has_marker_line(transcript, NO_HOST_HOME)
+    {
         return false;
     }
     let name = std::path::Path::new(manager_home)
@@ -698,7 +733,10 @@ mod bind_tests {
 
 #[cfg(test)]
 mod home_probe_tests {
-    use super::{host_home_is_invisible, host_invisibility_probe};
+    use super::{
+        host_home_is_invisible, host_invisibility_probe, typed_marker, vmm_probe,
+        HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS,
+    };
 
     #[test]
     fn probe_lists_guest_home_and_the_resolved_manager_home() {
@@ -706,8 +744,34 @@ mod home_probe_tests {
         let probe = host_invisibility_probe(home);
         assert!(probe.contains("ls -1 /home"));
         assert!(probe.contains(home));
-        assert!(probe.contains("NO_HOST_HOME"));
-        assert!(probe.contains("HOST_HOME_VISIBLE"));
+        assert!(probe.contains(&typed_marker(NO_HOST_HOME)));
+        assert!(probe.contains(&typed_marker(HOST_HOME_VISIBLE)));
+    }
+
+    // The typed text is echoed by the serial console, so it must never hold
+    // a marker the verdict reads.
+    #[test]
+    fn typed_probes_never_contain_a_plain_marker() {
+        let typed = [host_invisibility_probe("/var/lib/isolation-manager"), vmm_probe()];
+        for text in &typed {
+            for marker in [HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS] {
+                assert!(!text.contains(marker), "{marker} in {text}");
+            }
+        }
+        assert!(vmm_probe().contains(&typed_marker(NO_VMM_PROCS)));
+    }
+
+    // A real shell turns each typed marker back into the plain marker.
+    #[test]
+    fn the_shell_prints_the_plain_marker_from_its_typed_form() {
+        for marker in [HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS] {
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(format!("echo {}", typed_marker(marker)))
+                .output()
+                .expect("sh runs");
+            assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), marker);
+        }
     }
 
     #[test]
@@ -723,5 +787,51 @@ mod home_probe_tests {
             "ubuntu\nNO_HOST_HOME\n",
             home
         ));
+    }
+}
+
+#[cfg(test)]
+mod echo_marker_tests {
+    use super::{host_home_is_invisible, no_vmm_procs};
+
+    // The guest serial echoes every typed command, so the probe text itself
+    // reaches the transcript. Shapes follow docs/b1-results.json: the prompt
+    // plus the typed line, and a long line that scrolls to a `<` prefix.
+    const HOME: &str = "/var/lib/isolation-manager";
+    const ECHO_PROBE: &str = "root@ubuntu-fc-uvm:~# ls -1 /home 2>&1; if [ -e '/var/lib/isolation-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n";
+    const SCROLLED_PROBE: &str = "<-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n";
+    const ECHO_VMM: &str = "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n";
+
+    #[test]
+    fn echoed_probe_with_a_clean_listing_and_the_absent_marker_is_invisible() {
+        let transcript = format!("{ECHO_PROBE}ubuntu\nNO_HOST_HOME\n");
+        assert!(host_home_is_invisible(&transcript, HOME));
+        let scrolled = format!("{SCROLLED_PROBE}ubuntu\r\nNO_HOST_HOME\r\n");
+        assert!(host_home_is_invisible(&scrolled, HOME));
+    }
+
+    #[test]
+    fn the_visible_marker_on_its_own_line_is_visible() {
+        let transcript = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n");
+        assert!(!host_home_is_invisible(&transcript, HOME));
+        let both = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\nNO_HOST_HOME\n");
+        assert!(!host_home_is_invisible(&both, HOME));
+    }
+
+    #[test]
+    fn an_echo_with_no_marker_lines_is_not_invisible() {
+        assert!(!host_home_is_invisible(ECHO_PROBE, HOME));
+        assert!(!host_home_is_invisible(SCROLLED_PROBE, HOME));
+        let both = format!("{ECHO_PROBE}ubuntu\n");
+        assert!(!host_home_is_invisible(&both, HOME));
+    }
+
+    #[test]
+    fn the_vmm_marker_counts_only_on_its_own_line() {
+        assert!(!no_vmm_procs(ECHO_VMM));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\n")));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\r\n")));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS  \n")));
+        assert!(!no_vmm_procs("root 12 firecracker --api-sock x NO_VMM_PROCS\n"));
     }
 }

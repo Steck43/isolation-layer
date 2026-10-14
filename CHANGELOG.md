@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The guest spot checks read a marker only from a line that is exactly that marker. The serial console echoes every typed command, so the echoed probe text used to satisfy the no-VMM check and always tripped the visible-home check. The probes now type each marker with an empty quote pair inside it, so the typed text never contains the marker the shell prints. `scripts/b1-prove.py` records the same verdicts and exits 1 when a spot check fails.
 - Drop the Dependabot `pip` ecosystem on this roof. There is no `requirements.txt` or `pyproject.toml`, so the weekly pip job failed with `dependency_file_not_found` (run `37385460556`).
 
 ### Added

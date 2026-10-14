@@ -19,14 +19,71 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+HOST_HOME_VISIBLE = "HOST_HOME_VISIBLE"
+NO_HOST_HOME = "NO_HOST_HOME"
+NO_VMM_PROCS = "NO_VMM_PROCS"
+
+
+def typed_marker(marker: str) -> str:
+    """The marker as typed: an empty quote pair after the first underscore.
+
+    The shell prints the plain marker, but the typed text, which the serial
+    console echoes back, never contains it.
+    """
+    head, sep, tail = marker.partition("_")
+    return f'{head}_""{tail}' if sep else f'""{marker}'
+
+
+def resolved_home(manager_home: str | None = None) -> str:
+    return manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
+
+
 def host_invisibility_probe(manager_home: str | None = None) -> str:
     """List the guest home root, then test this process's resolved home."""
-    home = manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
+    home = resolved_home(manager_home)
     quoted = "'" + home.replace("'", "'\\''") + "'"
     return (
         "ls -1 /home 2>&1; "
-        f"if [ -e {quoted} ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi"
+        f"if [ -e {quoted} ]; then echo {typed_marker(HOST_HOME_VISIBLE)}; "
+        f"else echo {typed_marker(NO_HOST_HOME)}; fi"
     )
+
+
+def vmm_probe() -> str:
+    """List VMM processes in the guest, or print the marker when there are none."""
+    return (
+        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep "
+        f"|| echo {typed_marker(NO_VMM_PROCS)}"
+    )
+
+
+def has_marker_line(transcript: str, marker: str) -> bool:
+    """True only when a line is exactly the marker; echoed command text never counts."""
+    return any(line.strip() == marker for line in transcript.splitlines())
+
+
+def no_vmm_procs(transcript: str) -> bool:
+    return has_marker_line(transcript, NO_VMM_PROCS)
+
+
+def host_home_is_invisible(transcript: str, home: str) -> bool:
+    if has_marker_line(transcript, HOST_HOME_VISIBLE) or not has_marker_line(
+        transcript, NO_HOST_HOME
+    ):
+        return False
+    name = Path(home).name
+    if not name:
+        return False
+    return not any(line.strip() == name for line in transcript.splitlines())
+
+
+def spot_checks(checks: dict[str, str], home: str) -> dict[str, bool]:
+    """Verdicts from the guest transcripts keyed kvm, vmm and home."""
+    return {
+        "kvm_absent": "cannot access '/dev/kvm'" in checks["kvm"],
+        "host_invisible": no_vmm_procs(checks["vmm"])
+        and host_home_is_invisible(checks["home"], home),
+    }
 
 
 BIN = ROOT / "bin"
@@ -339,19 +396,24 @@ def run_prove(mode: str) -> int:
     serial_log.write_text(boot_buf)
 
     checks: dict[str, str] = {}
-    for cmd in [
-        "ls /dev/kvm 2>&1",
-        "ps aux 2>&1 | grep -E 'firecracker|jailer' | grep -v grep || echo NO_VMM_PROCS",
-        host_invisibility_probe(),
-        "uname -a",
+    by_key: dict[str, str] = {}
+    for key, cmd in [
+        ("kvm", "ls /dev/kvm 2>&1"),
+        ("vmm", vmm_probe()),
+        ("home", host_invisibility_probe()),
+        ("uname", "uname -a"),
     ]:
         assert ctx.proc.stdin is not None
         ctx.proc.stdin.write(cmd + "\n")
         ctx.proc.stdin.flush()
         chunk = drain_for(out_q, 3)
         checks[cmd] = chunk
+        by_key[key] = chunk
         print(f"=== guest: {cmd} ===")
         print(chunk)
+    verdicts = spot_checks(by_key, resolved_home())
+    print(f"spot_check_kvm_absent={verdicts['kvm_absent']}")
+    print(f"spot_check_host_invisible={verdicts['host_invisible']}")
 
     vsock_result: dict = {"ok": False}
     vsock_thread = threading.Thread(
@@ -384,12 +446,13 @@ def run_prove(mode: str) -> int:
         "time_to_workload_ms": round(t_work * 1000, 1),
         "vsock_roundtrip": vsock_result,
         "checks": checks,
+        "spot_checks": verdicts,
     }
     (run_dir / "b1_results.json").write_text(json.dumps(results, indent=2))
 
     teardown(ctx)
     print(f"run_dir={run_dir}")
-    return 0
+    return 0 if all(verdicts.values()) else 1
 
 
 def main() -> int:
