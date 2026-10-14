@@ -108,13 +108,7 @@ jobs:
         # run. On capability-gate that turns a green 37-passed/2-skipped suite
         # red in two different ways depending on which of two same-named modules
         # lands on the path. The skips are correct behaviour.
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
         run: PYTHONPATH=. python -m pytest -q
-      - name: public surface scan (file count)
-        env:
-          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
-        run: PYTHONPATH=. python tests/test_public_surface.py
 
   rust-tests:
     name: rust (cargo test)
@@ -268,21 +262,42 @@ jobs:
           /tmp/actionlint -color
 
   public-surface:
-    name: public-surface
+    # The scanner comes from the base branch, never from the pull request under
+    # review, and runs from a temp folder with the standard library only. This
+    # job installs nothing and is the only place the private list is exposed.
+    name: public surface (scanner from base)
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: scan with the base copy when main has one
+          fetch-depth: 0
+      - name: load the scanner from the base branch
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags origin main
-          if git cat-file -e origin/main:scripts/public_surface_scan.py 2>/dev/null; then
-            git show origin/main:scripts/public_surface_scan.py > /tmp/public_surface_scan.py
-            git show origin/main:scripts/public_name_hashes.txt > /tmp/public_name_hashes.txt
-            python /tmp/public_surface_scan.py --root "$GITHUB_WORKSPACE"
+          set -euo pipefail
+          if [ -n "${PR_BASE}" ]; then
+            BASE="${PR_BASE}"
           else
-            python scripts/public_surface_scan.py --root "$GITHUB_WORKSPACE"
+            git fetch --no-tags origin main
+            BASE="$(git rev-parse origin/main)"
           fi
+          mkdir -p "${RUNNER_TEMP}/pss"
+          if ! git cat-file -e "${BASE}:scripts/public_surface_scan.py"; then
+            echo "::error::base ${BASE} has no scanner; refusing to run the pull request copy"
+            exit 1
+          fi
+          git show "${BASE}:scripts/public_surface_scan.py" > "${RUNNER_TEMP}/pss/public_surface_scan.py"
+          echo "scanner from base ${BASE}: $(sha256sum "${RUNNER_TEMP}/pss/public_surface_scan.py" | cut -c1-64)"
+      - name: scan every tracked file
+        env:
+          LEAK_DENYLIST: ${{ secrets.LEAK_DENYLIST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LEAK_DENYLIST}" ]; then
+            echo "::error::LEAK_DENYLIST is not available to this run (fork or missing secret); failing closed"
+            exit 1
+          fi
+          python3 -I -S "${RUNNER_TEMP}/pss/public_surface_scan.py" --root "${GITHUB_WORKSPACE}" --expect-entries 13
