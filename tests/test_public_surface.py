@@ -3,8 +3,8 @@
 Only the fake term zqxwvk is planted. Fixtures for the built-in rules are
 assembled at run time from rot13 words and chr() separators, so this tracked
 file never spells a home path, address, or email that the real scan of the
-tree would flag. The real tree scan needs the private list, which is never
-stored in this repository; run scripts/public_surface_scan.py with it.
+tree would flag. The real tree scan runs in the CI public-surface job, the
+only step that receives the private list.
 """
 
 from __future__ import annotations
@@ -229,6 +229,18 @@ RULE_CASES = {
     ],
     "email": [NAME + AT + r("pbecbengr") + DOT + r("pbz")],
     "user-at-host": [NAME + AT + r("jbexfgngvba"), "root" + AT + r("fubc")],
+    "host-dns-name": [
+        NAME + DOT + r("zfubzr") + DOT + r("arg"),
+        NAME + DOT + r("ybpny"),
+        NAME + DOT + r("yna"),
+        NAME + DOT + r("ubzr") + DOT + r("necn"),
+        NAME + DOT + r("vagreany"),
+        NAME + "-01" + DOT + r("gnvy") + "123" + DOT + r("gf") + DOT + r("arg"),
+    ],
+    "trust-domain": [
+        r("fcvssr") + COLON + SL * 2 + NAME + DOT + r("pbec") + SL + "x",
+        "trust_domain = " + chr(34) + NAME + DOT + r("bet") + chr(34),
+    ],
 }
 RULE_PARAMS = [
     pytest.param(rule, text, id=f"{rule}-{i}")
@@ -255,6 +267,73 @@ def test_split_home_paths_hit(text: str) -> None:
 @pytest.mark.parametrize(("rule", "text"), RULE_PARAMS)
 def test_built_in_rule_hits_without_the_secret(rule: str, text: str) -> None:
     assert rule in scan.scan_bytes(("prefix " + text + " suffix").encode(), [])
+
+
+LOOK_ALIKE = str.maketrans({"a": "а", "e": "е", "o": "о", "p": "р", "c": "с"})
+
+
+def _continued(text: str) -> str:
+    half = len(text) // 2
+    return 'X = "' + text[:half] + '" ' + BS + '\n    "' + text[half:] + '"'
+
+
+# T27: the built-in rules see through the same forms as a private entry.
+ENCODINGS = {
+    "plain": lambda s: s.encode(),
+    "percent": lambda s: "".join(f"%{b:02X}" for b in s.encode()).encode(),
+    "double-percent": lambda s: "".join(f"%25{b:02X}" for b in s.encode()).encode(),
+    "unicode-escape": lambda s: "".join(BS + f"u{ord(c):04x}" for c in s).encode(),
+    "html-entity": lambda s: "".join(f"&#x{ord(c):x};" for c in s).encode(),
+    "fullwidth": lambda s: "".join(
+        chr(ord(c) + 0xFEE0) if 0x21 <= ord(c) <= 0x7E else c for c in s
+    ).encode(),
+    "zero-width": lambda s: "​".join(s).encode(),
+    "look-alike": lambda s: s.translate(LOOK_ALIKE).encode(),
+    "utf-16-le": lambda s: s.encode("utf-16-le"),
+    "utf-16-be": lambda s: s.encode("utf-16-be"),
+    "utf-16-bom": lambda s: codecs.BOM_UTF16_LE + s.encode("utf-16-le"),
+    "utf-32-le": lambda s: s.encode("utf-32-le"),
+    "utf-32-be-bom": lambda s: codecs.BOM_UTF32_BE + s.encode("utf-32-be"),
+    "base64": lambda s: base64.b64encode(s.encode()),
+    "base64-urlsafe-unpadded": lambda s: base64.urlsafe_b64encode(s.encode()).rstrip(
+        b"="
+    ),
+    "hex": lambda s: s.encode().hex().encode(),
+    "line-continuation": lambda s: _continued(s).encode(),
+    "binary": lambda s: b"\x89PNG\x00\x00" + s.encode() + b"\x00\xff",
+}
+
+
+def _percent(s: str) -> str:
+    return "".join(f"%{b:02X}" for b in s.encode())
+
+
+# Encodings nested inside one another; each layer must be undone in turn.
+ENCODINGS.update(
+    {
+        "base64-then-percent": lambda s: _percent(
+            base64.b64encode(s.encode()).decode()
+        ).encode(),
+        "base64-then-unicode-escape": lambda s: "".join(
+            BS + f"u{ord(c):04x}" for c in base64.b64encode(s.encode()).decode()
+        ).encode(),
+        "hex-then-html-entity": lambda s: "".join(
+            f"&#x{ord(c):x};" for c in s.encode().hex()
+        ).encode(),
+        "percent-then-fullwidth-then-escape": lambda s: "".join(
+            BS + f"u{ord(c) + 0xFEE0:04x}" for c in _percent(s)
+        ).encode(),
+    }
+)
+
+
+@pytest.mark.parametrize("encoding", sorted(ENCODINGS))
+@pytest.mark.parametrize(("rule", "text"), RULE_PARAMS)
+def test_built_in_rules_see_through_every_encoding(
+    rule: str, text: str, encoding: str
+) -> None:
+    data = b"prefix " + ENCODINGS[encoding](text) + b" suffix"
+    assert rule in scan.scan_bytes(data, []), (rule, encoding)
 
 
 def test_every_built_in_rule_has_cases() -> None:
@@ -287,6 +366,25 @@ def test_every_built_in_rule_has_cases() -> None:
         pytest.param(SL + HOME + SL + "<user>", id="angle-placeholder"),
         pytest.param(SL + HOME + SL + "NO_HOST_HOME", id="upper-case-marker"),
         pytest.param("user" + AT + "1000" + DOT + "service", id="systemd-user-unit"),
+        pytest.param(
+            "~" + SL + DOT + r("ybpny") + SL + "state" + SL + "x", id="xdg-local-dir"
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "box" + DOT + "invalid" + SL + "x",
+            id="reserved-trust-domain",
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "example" + DOT + "org" + SL + "x",
+            id="example-trust-domain",
+        ),
+        pytest.param(
+            r("fcvssr") + COLON + SL * 2 + "{TRUST_DOMAIN}" + SL + "x",
+            id="templated-trust-domain",
+        ),
+        pytest.param(
+            "trust_domain = " + chr(34) + "{TRUST_DOMAIN}" + chr(34),
+            id="templated-trust-domain-key",
+        ),
     ],
 )
 def test_built_in_rules_leave_generic_text_alone(text: str) -> None:
@@ -308,6 +406,67 @@ def test_box_host_name_rule_is_hash_based(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_built_in_host_hash_is_not_a_plain_word() -> None:
     assert all(re.fullmatch(r"[0-9a-f]{64}", h) for h in scan.BUILTIN_HOST_TOKENS)
+
+
+CAPITAL = FAKE[0].upper() + FAKE[1:]
+HOST_SHAPES = {
+    "env-name": FAKE.upper() + "_PROVE",
+    "camel-suffix": CAPITAL + "Prove",
+    "camel-prefix": "run" + CAPITAL,
+    "digit-suffix": FAKE + "01",
+    "digit-prefix": "01" + FAKE,
+    "glued-suffix": FAKE + "prove",
+    "glued-prefix": "sync" + FAKE,
+    "glued-upper": "SYNC" + FAKE.upper() + "HOST",
+    "split-space": FAKE[:5] + " " + FAKE[5:],
+    "split-three": FAKE[:3] + " " + FAKE[3:6] + " " + FAKE[6:],
+    "split-dash-three": FAKE[:3] + "-" + FAKE[3:6] + "-" + FAKE[6:],
+    "split-dash-glued": "pre" + FAKE[:5] + "-" + FAKE[5:] + "prove",
+    "split-underscore-glued": "PRE" + FAKE[:5].upper() + "_" + FAKE[5:].upper() + "X",
+    "split-dot-glued": "pre" + FAKE[:5] + DOT + FAKE[5:] + "prove",
+    "dns-name": FAKE + DOT + "example" + DOT + "net",
+    "file-name": "scripts" + SL + "sync-to-" + FAKE + DOT + "sh",
+}
+
+
+@pytest.fixture
+def fake_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    digest = hashlib.sha256(FAKE.encode()).hexdigest()
+    monkeypatch.setattr(scan, "BUILTIN_HOST_TOKENS", frozenset({digest}))
+    # raising=False lets this fixture run against a scanner without lengths;
+    # test_every_host_token_has_a_length fails if the constant is missing.
+    monkeypatch.setattr(
+        scan, "BUILTIN_HOST_LENGTHS", frozenset({len(FAKE)}), raising=False
+    )
+
+
+# T34: the host name is found however it is glued, split, or encoded.
+@pytest.mark.usefixtures("fake_host")
+@pytest.mark.parametrize("encoding", sorted(ENCODINGS))
+@pytest.mark.parametrize("shape", sorted(HOST_SHAPES))
+def test_host_name_is_found_in_every_shape_and_encoding(
+    shape: str, encoding: str
+) -> None:
+    data = b"x " + ENCODINGS[encoding](HOST_SHAPES[shape]) + b" y"
+    assert "box-host-name" in scan.scan_bytes(data, []), (shape, encoding)
+
+
+@pytest.mark.usefixtures("fake_host")
+def test_host_name_near_misses_stay_quiet() -> None:
+    for text in (FAKE[:-1] + " " + FAKE[1:], FAKE[:-1] + "q", FAKE[1:] + "s"):
+        assert scan.scan_bytes(text.encode(), []) == [], text
+
+
+def test_every_host_token_has_a_length() -> None:
+    assert scan.BUILTIN_HOST_LENGTHS
+    assert all(4 <= n <= 64 for n in scan.BUILTIN_HOST_LENGTHS)
+
+
+def test_tracked_tree_has_no_built_in_hits() -> None:
+    """The built-in rules need no secret, so the real tree is scanned here."""
+    files, hits = scan.scan_tree(ROOT, [])
+    assert files > 100
+    assert hits == []
 
 
 def test_allowed_identifier_is_exact(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -500,6 +659,59 @@ def test_pytest_showlocals_does_not_leak(
     assert CANARY not in (out.stdout + out.stderr).casefold()
 
 
+# --- the CI job runs the base scanner with the secret, before any install (P1, P7)
+
+
+def _job(name: str) -> str:
+    text = (ROOT / ".github" / "workflows" / "floor.yml").read_text(encoding="utf-8")
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text
+    )
+    assert match, name
+    return match.group(1)
+
+
+def test_scan_job_loads_the_scanner_from_base_into_a_temp_dir() -> None:
+    job = _job("public-surface")
+    assert "github.event.pull_request.base.sha" in job
+    assert "origin/main" in job
+    assert (
+        'git show "${BASE}:scripts/public_surface_scan.py" > "${RUNNER_TEMP}/pss/public_surface_scan.py"'
+        in job
+    )
+    assert "has no scanner; refusing to run the pull request copy" in job
+    assert 'python3 -I -S "${RUNNER_TEMP}/pss/public_surface_scan.py"' in job
+
+
+# The expected entry count comes from the base copy of the scanner, so the pull
+# request under review cannot change how many entries the list must hold.
+def test_scan_job_takes_the_entry_count_from_the_base_scanner() -> None:
+    job = _job("public-surface")
+    assert "--expect-entries" not in job
+    assert "EXPECTED_ENTRIES" not in job
+
+
+def test_scan_job_installs_nothing_and_is_the_only_holder_of_the_secret() -> None:
+    job = _job("public-surface")
+    assert (
+        "pip install" not in job
+        and "setup-python" not in job
+        and "requirements" not in job
+    )
+    workflow = (ROOT / ".github" / "workflows" / "floor.yml").read_text(
+        encoding="utf-8"
+    )
+    assert workflow.count("secrets.LEAK_DENYLIST") == 1
+    assert "secrets.LEAK_DENYLIST" in job
+    assert "persist-credentials: false" in job
+
+
+def test_scan_job_fails_closed_without_the_secret() -> None:
+    job = _job("public-surface")
+    assert 'if [ -z "${LEAK_DENYLIST}" ]' in job
+    assert "exit 1" in job
+
+
 # --- receipts, service account, guest probe (carried from the surface branch)
 
 
@@ -508,6 +720,18 @@ def test_raw_receipts_keep_their_produced_bytes() -> None:
     assert "receipts/raw/** -text" in attributes
     raw = (ROOT / "receipts" / "raw" / "step12b-prove.json").read_bytes()
     assert raw.count(b"\r\n") == raw.count(b"\n") > 0, "line endings were normalised"
+
+
+def test_receipt_notes_record_the_renamed_environment_key() -> None:
+    raw = (ROOT / "receipts" / "raw" / "step12b-prove.json").read_text(encoding="utf-8")
+    assert '"BOX_LIVE_PROVE"' in raw
+    for doc in (
+        "receipts/STEP-12b-2026-10-09.md",
+        "receipts/T-REP-06-BOXENTRY-LIVE-2026-10-09.md",
+    ):
+        text = (ROOT / doc).read_text(encoding="utf-8")
+        assert "renamed one environment key" in text, doc
+        assert "`BOX_LIVE_PROVE`" in text, doc
 
 
 def test_redacted_digests_match_the_files_they_name() -> None:
@@ -523,28 +747,176 @@ def test_redacted_digests_match_the_files_they_name() -> None:
         assert recorded == [actual], doc
 
 
-def test_recorded_file_hashes_match_or_are_marked_redacted() -> None:
-    digest = re.compile(r"\b[0-9a-f]{64}\b")
-    named = re.compile(r"[A-Za-z0-9_./-]+\.(?:json|md|py|rs|txt|toml)")
+DIGEST = re.compile(r"(?<![0-9A-Fa-f])[0-9a-fA-F]{64}(?![0-9A-Fa-f])")
+NAMED = re.compile(
+    r"(?<![\w./-])([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:json|md|py|rs|txt|toml|sh|yml|lock))"
+    r"(?![\w-])"
+)
+
+
+def resolve_pin(doc: str, name: str, tracked: list[str]) -> str | None:
+    """The tracked file a recorded name means, or None if it is not unique."""
+    folder = str(Path(doc).parent).replace(os.sep, "/")
+    for candidate in (name, f"{folder}/{name}"):
+        if candidate in tracked:
+            return candidate
+    base = name.rsplit("/", 1)[-1]
+    same_base = [t for t in tracked if t.rsplit("/", 1)[-1] == base]
+    ends = [t for t in same_base if t.endswith("/" + name)]
+    pick = ends or same_base
+    return pick[0] if len(pick) == 1 else None
+
+
+def past_digests(root: Path, rel: str) -> set[str]:
+    """sha256 of every committed version of ``rel``."""
+    commits = subprocess.check_output(
+        ["git", "log", "--all", "--format=%H", "--", rel], cwd=root, text=True
+    ).split()
+    out: set[str] = set()
+    for commit in commits:
+        shown = subprocess.run(
+            ["git", "show", f"{commit}:{rel}"], cwd=root, capture_output=True
+        )
+        if shown.returncode == 0:
+            out.add(hashlib.sha256(shown.stdout).hexdigest())
+    return out
+
+
+def pin_problems(root: Path) -> list[str]:
+    shallow = subprocess.check_output(
+        ["git", "rev-parse", "--is-shallow-repository"], cwd=root, text=True
+    ).strip()
+    if shallow != "false":
+        return ["history is shallow; hash pins need the full history"]
+    tracked = scan.tracked_files(root)
     problems: list[str] = []
-    for rel in scan.tracked_files(ROOT):
-        path = ROOT / rel
-        if path.suffix.lower() not in {".md", ".json"} or not path.is_file():
+    for rel in tracked:
+        path = root / rel
+        if not path.is_file():
             continue
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        for index, line in enumerate(lines):
-            digests = digest.findall(line)
-            rels = named.findall(line)
-            if not digests or not rels or "redacted" in line.casefold():
+        text = path.read_bytes().decode("utf-8", "replace")
+        for index, line in enumerate(text.splitlines()):
+            digests = {d.lower() for d in DIGEST.findall(line)}
+            names = NAMED.findall(line)
+            if not digests or not names:
                 continue
-            for target in rels:
-                full = ROOT / target
-                if (
-                    full.is_file()
-                    and hashlib.sha256(full.read_bytes()).hexdigest() not in digests
-                ):
-                    problems.append(f"{rel}:{index + 1}:{target}")
+            if "redacted" in line.casefold():
+                continue  # test_redacted_digests_match_the_files_they_name
+            historical = "historical" in line.casefold()
+            actual = set()
+            unresolved = []
+            for name in names:
+                target = resolve_pin(rel, name, tracked)
+                if target is None:
+                    unresolved.append(name)
+                elif historical:
+                    actual |= past_digests(root, target)
+                else:
+                    actual.add(hashlib.sha256((root / target).read_bytes()).hexdigest())
+            if historical and not actual:
+                continue  # names a file outside this repository
+            if not actual & digests:
+                where = f"{rel}:{index + 1}"
+                problems.append(
+                    f"{where}: names {sorted(names)} resolve to no file this "
+                    f"digest matches (unresolved {sorted(unresolved)})"
+                )
+    return problems
+
+
+def test_recorded_file_hashes_match_or_are_marked_historical() -> None:
+    problems = pin_problems(ROOT)
     assert problems == [], "hash pins disagree:\n" + "\n".join(problems)
+
+
+def _pin_repo(tmp_path: Path, record: str) -> Path:
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    def put(rel: str, data: bytes) -> None:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    git("init", "-q")
+    git("config", "user.email", "t" + AT + "example" + DOT + "com")
+    git("config", "user.name", "t")
+    put("crates/core/src/gate.rs", b"old\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "old")
+    put("crates/core/src/gate.rs", b"new\n")
+    put("crates/a/dup.rs", b"a\n")
+    put("crates/b/dup.rs", b"b\n")
+    put("docs/dup.json", b"d\n")
+    put("receipts/dup.json", b"r\n")
+    put("docs/record.md", (record + "\n").encode())
+    git("add", ".")
+    git("commit", "-q", "-m", "new")
+    return tmp_path
+
+
+def _h(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+OLD, NEW = _h(b"old\n"), _h(b"new\n")
+A_DUP, D_JSON = _h(b"a\n"), _h(b"d\n")
+FULL = "crates/core/src/gate.rs"
+
+
+# T29: a pin either matches, or is marked historical and matches some past
+# version; a short or partial name is resolved, never skipped.
+@pytest.mark.parametrize(
+    ("record", "ok"),
+    [
+        pytest.param(f"`gate.rs` sha256 `{NEW}`", True, id="short-name-current"),
+        pytest.param(f"`gate.rs` sha256 `{OLD}`", False, id="short-name-stale"),
+        pytest.param(f"`src/gate.rs` sha256 `{OLD}`", False, id="partial-path-stale"),
+        pytest.param(f"`core/src/gate.rs` `{NEW}`", True, id="partial-path-current"),
+        pytest.param(f"`{FULL}` `{NEW.upper()}`", True, id="full-path-current-upper"),
+        pytest.param(f"`{FULL}` `{OLD.upper()}`", False, id="full-path-stale-upper"),
+        pytest.param(f"`gate.rs` (historical) `{OLD}`", True, id="historical-past"),
+        pytest.param(
+            f"`gate.rs` (historical) `{'0' * 64}`", False, id="historical-bogus"
+        ),
+        pytest.param(f"`gone.json` sha256 `{OLD}`", False, id="unresolved-unmarked"),
+        pytest.param(
+            f"`gone.json` (historical) `{OLD}`", True, id="unresolved-historical"
+        ),
+        pytest.param(f"`dup.rs` sha256 `{A_DUP}`", False, id="ambiguous"),
+        pytest.param(f"`a/dup.rs` sha256 `{A_DUP}`", True, id="disambiguated"),
+        pytest.param(f"`dup.json` sha256 `{D_JSON}`", True, id="beside-the-record"),
+        pytest.param(
+            f"`{FULL}` `{'1' * 64}` (redacted)", True, id="redacted-handled-elsewhere"
+        ),
+    ],
+)
+def test_pin_check_resolves_and_fails_instead_of_skipping(
+    tmp_path: Path, record: str, ok: bool
+) -> None:
+    problems = pin_problems(_pin_repo(tmp_path, record))
+    assert (problems == []) is ok, problems
+
+
+# A historical pin can only be checked against full history; a shallow clone
+# must fail by name instead of reporting a mismatch or passing.
+def test_pin_check_fails_on_shallow_history(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    _pin_repo(src, f"`gate.rs` (historical) `{OLD}`")
+    assert pin_problems(src) == []
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", src.as_uri(), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+    problems = pin_problems(clone)
+    assert problems == ["history is shallow; hash pins need the full history"]
+
+
+def test_tests_job_checks_out_full_history() -> None:
+    assert "fetch-depth: 0" in _job("tests")
 
 
 def test_service_account_is_dedicated_and_home_is_protected() -> None:
@@ -567,6 +939,48 @@ def test_service_account_is_dedicated_and_home_is_protected() -> None:
     assert sum("NOPASSWD" in line for line in rules) == 1
 
 
+def _unit_value(unit: str, key: str) -> str:
+    values = re.findall(rf"(?m)^{key}=(\S+)\s*$", unit)
+    assert len(values) == 1, key
+    return values[0]
+
+
+# T31: a fresh install creates the account the unit runs as.
+def test_installer_creates_the_account_the_unit_runs_as() -> None:
+    unit = (ROOT / "deploy" / "systemd" / "isolation-manager.service").read_text(
+        encoding="utf-8"
+    )
+    user = _unit_value(unit, "User")
+    group = _unit_value(unit, "Group")
+    state = "/var/lib/" + _unit_value(unit, "StateDirectory")
+    installer = (ROOT / "deploy" / "do-operator-install.sh").read_text(encoding="utf-8")
+    flat = installer.replace(BS + "\r\n", " ").replace(BS + "\n", " ")
+    creates = re.findall(r"(?m)^\s*useradd\s+(.*)$", flat)
+    assert len(creates) == 1, "the installer must create exactly one account"
+    args = creates[0].split()
+    assert args[-1] == user
+    assert "--system" in args
+    assert "--home-dir" in args and args[args.index("--home-dir") + 1] == state
+    assert "--shell" in args and args[args.index("--shell") + 1].endswith("nologin")
+    # A personal account must never be the service account.
+    assert group == user and "--user-group" in args
+    lookup = re.search(rf"(?m)^getent passwd {user}\s*$", flat)
+    assert lookup and lookup.start() > flat.index("useradd"), "check the account exists"
+    first_use = min(
+        flat.index(m) for m in (f"-u {user}", "cp deploy/sudoers.d") if m in flat
+    )
+    assert flat.index("useradd") < first_use, "create the account before using it"
+    sudoers = (ROOT / "deploy" / "sudoers.d" / "aegis-jailer").read_text(
+        encoding="utf-8"
+    )
+    granted = {
+        line.split()[0]
+        for line in sudoers.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "Defaults"))
+    }
+    assert granted == {user}
+
+
 def test_guest_probe_uses_the_resolved_home(monkeypatch: pytest.MonkeyPatch) -> None:
     home = SL + "var" + SL + "lib" + SL + "isolation-manager"
     monkeypatch.setenv("HOME", home)
@@ -577,13 +991,106 @@ def test_guest_probe_uses_the_resolved_home(monkeypatch: pytest.MonkeyPatch) -> 
     module = importlib.util.module_from_spec(spec)
     sys.modules["b1_prove"] = module
     spec.loader.exec_module(module)
-    probe = module.host_invisibility_probe()
+    probe = module.host_invisibility_probe(module.host_homes("", home))
     assert "ls -1 " + SL + HOME in probe
     assert home in probe
-    # The typed probe carries the marker only in its typed form, never plain.
+    # The typed probe carries each marker only in its typed form, never plain.
     assert module.typed_marker("HOST_HOME_VISIBLE") in probe
     assert "HOST_HOME_VISIBLE" not in probe
     assert "<manager-home>" not in probe
+
+
+def _b1_prove():
+    spec = importlib.util.spec_from_file_location(
+        "b1_prove", ROOT / "scripts" / "b1-prove.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["b1_prove"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+MANAGER_HOME = SL + "var" + SL + "lib" + SL + "isolation-manager"
+OP1 = SL + HOME + SL + "op1"
+OP2 = SL + "srv" + SL + "op2"
+PASSWD = "\n".join(
+    [
+        "root:x:0:0:root:" + SL + "root:" + SL + "bin" + SL + "bash",
+        "op1:x:1000:1000:Operator:" + OP1 + ":" + SL + "bin" + SL + "bash",
+        "op2:x:1001:1001::" + OP2 + ":" + SL + "bin" + SL + "zsh",
+        "isolation:x:998:998::"
+        + MANAGER_HOME
+        + ":"
+        + SL
+        + "usr"
+        + SL
+        + "sbin"
+        + SL
+        + "nologin",
+        "svc:x:1002:1002::"
+        + SL
+        + HOME
+        + SL
+        + "svc:"
+        + SL
+        + "usr"
+        + SL
+        + "sbin"
+        + SL
+        + "nologin",
+        "locked:x:1003:1003::" + SL + HOME + SL + "locked:" + SL + "bin" + SL + "false",
+        "nobody:x:65534:65534::" + SL + "nonexistent:" + SL + "bin" + SL + "sh",
+        "rel:x:1004:1004::relhome:" + SL + "bin" + SL + "sh",
+        "short:x:1005:1005",
+        "op1b:x:1006:1006::" + OP1 + ":" + SL + "bin" + SL + "bash",
+        "broken line",
+    ]
+)
+
+
+# T35: every human home on the host is probed, and any one visible fails.
+def test_guest_probe_covers_every_human_home() -> None:
+    b1 = _b1_prove()
+    homes = b1.host_homes(PASSWD, MANAGER_HOME)
+    assert homes == sorted([OP1, OP2, MANAGER_HOME])
+    probe = b1.host_invisibility_probe(homes)
+    for home in homes:
+        assert "'" + home + "'" in probe
+    assert b1.typed_marker("NO_HOST_HOME") + "_3" in probe
+    assert "NO_HOST_HOME" not in probe
+
+
+def test_a_visible_operator_home_fails_the_probe_verdict() -> None:
+    b1 = _b1_prove()
+    homes = b1.host_homes(PASSWD, MANAGER_HOME)
+    ok = b1.host_home_is_invisible
+    assert ok("ubuntu\nNO_HOST_HOME_3\n", homes)
+    assert not ok("op1\nNO_HOST_HOME_3\n", homes)
+    assert not ok("op2\nNO_HOST_HOME_3\n", homes)
+    assert not ok("HOST_HOME_VISIBLE\nNO_HOST_HOME_3\n", homes)
+    assert not ok("ubuntu\nNO_HOST_HOME_1\n", homes)
+    assert not ok("x; echo NO_HOST_HOME_3; fi\n", homes)
+    assert not ok("kvm only\n", homes)
+    assert not ok("ubuntu\nNO_HOST_HOME_0\n", [])
+    assert not ok("ubuntu\nNO_HOST_HOME_1\n", [SL])
+
+
+def test_python_and_rust_probes_agree() -> None:
+    rust = (ROOT / "crates" / "isolation-manager" / "src" / "prove.rs").read_text(
+        encoding="utf-8"
+    )
+    python = (ROOT / "scripts" / "b1-prove.py").read_text(encoding="utf-8")
+    for name in ("HOST_HOME_VISIBLE", "NO_HOST_HOME", "NO_VMM_PROCS"):
+        assert f'pub const {name}: &str = "{name}";' in rust, name
+        assert f'{name} = "{name}"' in python, name
+    for marker in ("uid != 65534", "/nologin"):
+        assert marker in rust and marker in python, marker
+    assert "uid >= 1000" in rust and "uid >= 1000" in python
+    # The spot check reaches the verdict only through the wrapper that fails
+    # an unreadable account list (the VM flow itself needs the box to run).
+    assert rust.count("host_homes_invisible(&homes_read, &serial)") == 1
+    assert "host_home_is_invisible(&serial" not in rust
 
 
 def test_spire_issuer_takes_host_and_trust_domain_from_the_operator() -> None:
@@ -599,17 +1106,3 @@ def test_spire_issuer_takes_host_and_trust_domain_from_the_operator() -> None:
         env={k: v for k, v in os.environ.items() if not k.startswith("BOX_")},
     )
     assert out.returncode == 0, out.stdout + out.stderr
-
-
-# The redaction of the raw step12b receipt also renamed one environment key;
-# both receipt notes say so, and the raw bytes carry the renamed key.
-def test_receipt_notes_record_the_renamed_environment_key() -> None:
-    raw = (ROOT / "receipts" / "raw" / "step12b-prove.json").read_text(encoding="utf-8")
-    assert '"BOX_LIVE_PROVE"' in raw
-    for doc in (
-        "receipts/STEP-12b-2026-10-09.md",
-        "receipts/T-REP-06-BOXENTRY-LIVE-2026-10-09.md",
-    ):
-        text = (ROOT / doc).read_text(encoding="utf-8")
-        assert "renamed one environment key" in text, doc
-        assert "`BOX_LIVE_PROVE`" in text, doc

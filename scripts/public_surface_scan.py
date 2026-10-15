@@ -48,6 +48,10 @@ MAX_DEPTH = 2
 BUILTIN_HOST_TOKENS = frozenset(
     {"1fbdb4006b386690234710ff0f85c9c665835b2f42a2eb4e68ba9a04713a3606"}
 )
+# Letter count of each host token, so the name is also found glued inside a
+# longer identifier (camel case, a digit suffix, a lower-case prefix).
+BUILTIN_HOST_LENGTHS = frozenset({8})
+MAX_COMPOUND = 128
 
 # sha256 of casefolded identifiers that are public interfaces defined by
 # sibling projects (an environment variable name read by the atoms engine).
@@ -106,8 +110,16 @@ _ESC = re.compile(
 _SIMPLE_ESC = {"n": "\n", "t": "\t", "r": "\r"}
 _CONTINUATION = re.compile(r"[\"']\s*\\?\r?\n\s*[\"']|\\\r?\n\s*")
 _SVG_GEOMETRY = re.compile(r'\b(?:d|points|viewBox|transform)="[^"]*"')
-_BASE_ONLY = {"email", "user-at-host", "private-ipv4", "private-ipv6"}
+_BASE_ONLY = {
+    "email",
+    "user-at-host",
+    "private-ipv4",
+    "private-ipv6",
+    "host-dns-name",
+    "trust-domain",
+}
 _TOKEN = re.compile(r"[A-Za-z0-9]+")
+_COMPOUND = re.compile(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*")
 
 _SEP = r"(?:\\+|/+)"
 RULES: dict[str, re.Pattern[str]] = {
@@ -131,6 +143,21 @@ RULES: dict[str, re.Pattern[str]] = {
     ),
     "user-at-host": re.compile(
         r"(?<![\w.@/+\\-])[A-Za-z_][A-Za-z0-9_-]*@[A-Za-z][A-Za-z0-9-]*(?![\w.@-])"
+    ),
+    # A name under a suffix that only resolves on one host or one private
+    # network (Hyper-V, mDNS, home routers, tailnets).
+    "host-dns-name": re.compile(
+        r"(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\."
+        r"(?:mshome\.net|local|lan|home\.arpa|internal|localdomain|intranet|ts\.net)"
+        r"(?![\w-])",
+        re.IGNORECASE,
+    ),
+    # A SPIFFE trust domain other than a reserved placeholder or a template.
+    "trust-domain": re.compile(
+        r"(?:spiffe://|trust_domain\s*[=:]\s*[\"'])"
+        r"(?!\{|(?:[\w-]+\.)*(?:invalid|test|example)(?![\w.-])|example\.(?:org|com|net)(?![\w.-]))"
+        r"[A-Za-z0-9][A-Za-z0-9.-]*",
+        re.IGNORECASE,
     ),
 }
 _EMAIL_OK = re.compile(
@@ -244,6 +271,13 @@ def _token_hashes(text: str) -> frozenset[str]:
     words = [w.casefold() for w in _TOKEN.findall(text)]
     tokens = set(words)
     tokens.update(a + b for a, b in zip(words, words[1:]))
+    tokens.update(a + b + c for a, b, c in zip(words, words[1:], words[2:]))
+    for match in _COMPOUND.finditer(text):
+        run = _compact(match.group(0)).casefold()
+        if len(run) > MAX_COMPOUND:
+            continue
+        for size in BUILTIN_HOST_LENGTHS:
+            tokens.update(run[i : i + size] for i in range(len(run) - size + 1))
     return frozenset(hashlib.sha256(t.encode()).hexdigest() for t in tokens)
 
 
@@ -322,12 +356,38 @@ def _unescape(text: str) -> str:
     return _ESC.sub(one, text)
 
 
+_DECODERS = (unquote, _unescape, html.unescape)
+MAX_ROUNDS = 4
+
+
+def _decoded_closure(seed: str) -> list[str]:
+    """``seed`` and every text the decoders reach from it, in any order."""
+    seen = {seed}
+    out = [seed]
+    frontier = [seed]
+    for _ in range(MAX_ROUNDS):
+        later = []
+        for form in frontier:
+            for decode in _DECODERS:
+                found = normalise(decode(form))
+                if found not in seen:
+                    seen.add(found)
+                    out.append(found)
+                    later.append(found)
+        frontier = later
+    return out
+
+
 def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[str]]:
     """(decoded forms, joined forms, obfuscated forms) of one text."""
     base = normalise(text)
-    once = unquote(base)
-    forms = [text, once, unquote(once), _unescape(base), html.unescape(base)]
-    joined = [_CONTINUATION.sub("", base)]
+    # A line continuation is a join the language itself performs, so every
+    # rule reads the continued text, not only the path and private rules.
+    forms = [text, *_decoded_closure(base)]
+    continued = _CONTINUATION.sub("", base)
+    if continued != base:
+        forms += _decoded_closure(continued)
+    joined: list[str] = []
     literals = [_drop_allowed(m.group(1)[1:-1]) for m in _LITERAL.finditer(base)]
     for size in range(2, 5):
         for i in range(len(literals) - size + 1):
@@ -335,13 +395,15 @@ def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[st
             joined.extend(joiner.join(window) for joiner in _JOINERS)
     obfuscated = [base[::-1], codecs.encode(base, "rot13")]
     if depth < MAX_DEPTH:
-        for decoded in _decoded_tokens(base) + _decoded_tokens(once):
+        tokens = itertools.chain.from_iterable(
+            _decoded_tokens(form) for form in dict.fromkeys(forms[1:])
+        )
+        for decoded in dict.fromkeys(tokens):
             more, more_joined, more_obfuscated = text_forms(decoded, depth + 1)
             forms += more
             joined += more_joined
             obfuscated += more_obfuscated
-    norm = [normalise(f) for f in forms]
-    return norm + forms, [normalise(f) for f in joined], obfuscated
+    return forms, [normalise(f) for f in joined], obfuscated
 
 
 def views_for(data: bytes) -> Views:

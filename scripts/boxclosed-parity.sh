@@ -6,7 +6,7 @@ set -euo pipefail
 ISO="${ISO:-$HOME/isolation-layer}"
 SPEAK="${SPEAK:-}"
 RECEIPT="${RECEIPT:-$ISO/docs/RECEIPT-LIVE-BOX-2026-10-03.md}"
-CHAIN="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
+CHAIN="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
 
 echo "=== binaries ==="
 MGR="$ISO/target/release/isolation-manager"

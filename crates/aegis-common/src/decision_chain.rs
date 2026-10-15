@@ -435,15 +435,17 @@ impl DecisionChain {
     }
 }
 
-/// Default chain path under XDG or /tmp for prove.
+/// The unit's chain path (`AEGIS_DECISION_CHAIN` in
+/// deploy/systemd/isolation-manager.service), used when the variable is unset.
+pub const UNIT_CHAIN_PATH: &str = "/var/lib/isolation-manager/decision-chain.jsonl";
+
+/// Chain path from `AEGIS_DECISION_CHAIN`, else the unit's path. Never a
+/// per-user home path, so a run outside the service writes the same chain.
 pub fn default_chain_path() -> PathBuf {
-    if let Ok(p) = std::env::var("AEGIS_DECISION_CHAIN") {
-        return PathBuf::from(p);
+    match std::env::var("AEGIS_DECISION_CHAIN") {
+        Ok(p) => PathBuf::from(p),
+        Err(_) => PathBuf::from(UNIT_CHAIN_PATH),
     }
-    let base = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    base.join(".local/state/aegis/decision-chain.jsonl")
 }
 
 #[cfg(test)]
@@ -452,6 +454,27 @@ mod tests {
     use std::io::Write;
     use std::sync::{Arc, Barrier};
     use std::thread;
+
+    #[test]
+    fn the_default_chain_is_the_units_chain() {
+        assert_eq!(
+            UNIT_CHAIN_PATH,
+            "/var/lib/isolation-manager/decision-chain.jsonl"
+        );
+        // Both branches in one test: no other test in this crate reads the
+        // variable, and the caller's value is restored at the end.
+        let saved = std::env::var_os("AEGIS_DECISION_CHAIN");
+        std::env::set_var("AEGIS_DECISION_CHAIN", "/srv/chain-from-env/chain.jsonl");
+        assert_eq!(
+            default_chain_path(),
+            PathBuf::from("/srv/chain-from-env/chain.jsonl")
+        );
+        std::env::remove_var("AEGIS_DECISION_CHAIN");
+        assert_eq!(default_chain_path(), PathBuf::from(UNIT_CHAIN_PATH));
+        if let Some(v) = saved {
+            std::env::set_var("AEGIS_DECISION_CHAIN", v);
+        }
+    }
 
     #[test]
     fn append_two_rows_verify_ok() {

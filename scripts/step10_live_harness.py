@@ -97,7 +97,7 @@ def _run_live_prove(
     env = os.environ.copy()
     chain = env.get(
         "AEGIS_DECISION_CHAIN",
-        str(Path.home() / ".local/state/aegis/decision-chain.jsonl"),
+        "/var/lib/isolation-manager/decision-chain.jsonl",
     )
     Path(chain).parent.mkdir(parents=True, exist_ok=True)
     env["AEGIS_DECISION_CHAIN"] = chain

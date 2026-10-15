@@ -19,6 +19,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def host_homes(passwd: str, manager_home: str) -> list[str]:
+    """Every host home a guest must not see; mirrors prove.rs host_homes."""
+    homes = {manager_home}
+    for line in passwd.splitlines():
+        fields = line.split(":")
+        if len(fields) < 7 or not fields[2].isdigit():
+            continue
+        uid, home, shell = int(fields[2]), fields[5], fields[6].strip()
+        no_login = shell.endswith(("/nologin", "/false"))
+        if uid >= 1000 and uid != 65534 and not no_login and home.startswith("/"):
+            homes.add(home)
+    return sorted(homes)
+
+
+def resolved_host_homes(manager_home: str | None = None) -> list[str]:
+    home = manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
+    passwd = Path("/etc/passwd")
+    return host_homes(passwd.read_text() if passwd.is_file() else "", home)
+
+
 HOST_HOME_VISIBLE = "HOST_HOME_VISIBLE"
 NO_HOST_HOME = "NO_HOST_HOME"
 NO_VMM_PROCS = "NO_VMM_PROCS"
@@ -34,18 +54,24 @@ def typed_marker(marker: str) -> str:
     return f'{head}_""{tail}' if sep else f'""{marker}'
 
 
-def resolved_home(manager_home: str | None = None) -> str:
-    return manager_home or os.environ.get("HOME") or "/var/lib/isolation-manager"
+def has_marker_line(transcript: str, marker: str) -> bool:
+    """True only when a line is exactly the marker; echoed command text never counts."""
+    return any(line.strip() == marker for line in transcript.splitlines())
 
 
-def host_invisibility_probe(manager_home: str | None = None) -> str:
-    """List the guest home root, then test this process's resolved home."""
-    home = resolved_home(manager_home)
-    quoted = "'" + home.replace("'", "'\\''") + "'"
+def no_vmm_procs(transcript: str) -> bool:
+    return has_marker_line(transcript, NO_VMM_PROCS)
+
+
+def host_invisibility_probe(homes: list[str] | None = None) -> str:
+    """List the guest home root, then test every host home by path."""
+    homes = resolved_host_homes() if homes is None else homes
+    quoted = " ".join("'" + h.replace("'", "'\\''") + "'" for h in homes)
     return (
-        "ls -1 /home 2>&1; "
-        f"if [ -e {quoted} ]; then echo {typed_marker(HOST_HOME_VISIBLE)}; "
-        f"else echo {typed_marker(NO_HOST_HOME)}; fi"
+        "ls -1 /home 2>&1; v=0; "
+        f'for h in {quoted}; do if [ -e "$h" ]; then v=1; '
+        f"echo {typed_marker(HOST_HOME_VISIBLE)}; fi; done; "
+        f'if [ "$v" = 0 ]; then echo {typed_marker(NO_HOST_HOME)}_{len(homes)}; fi'
     )
 
 
@@ -57,32 +83,23 @@ def vmm_probe() -> str:
     )
 
 
-def has_marker_line(transcript: str, marker: str) -> bool:
-    """True only when a line is exactly the marker; echoed command text never counts."""
-    return any(line.strip() == marker for line in transcript.splitlines())
-
-
-def no_vmm_procs(transcript: str) -> bool:
-    return has_marker_line(transcript, NO_VMM_PROCS)
-
-
-def host_home_is_invisible(transcript: str, home: str) -> bool:
-    if has_marker_line(transcript, HOST_HOME_VISIBLE) or not has_marker_line(
-        transcript, NO_HOST_HOME
-    ):
+def host_home_is_invisible(transcript: str, homes: list[str]) -> bool:
+    """Mirrors prove.rs: fail closed unless the full check ran and saw nothing."""
+    lines = [line.strip() for line in transcript.splitlines()]
+    if not homes or HOST_HOME_VISIBLE in lines:
         return False
-    name = Path(home).name
-    if not name:
+    if f"{NO_HOST_HOME}_{len(homes)}" not in lines:
         return False
-    return not any(line.strip() == name for line in transcript.splitlines())
+    names = [Path(h).name for h in homes]
+    return all(name and name not in lines for name in names)
 
 
-def spot_checks(checks: dict[str, str], home: str) -> dict[str, bool]:
+def spot_checks(checks: dict[str, str], homes: list[str]) -> dict[str, bool]:
     """Verdicts from the guest transcripts keyed kvm, vmm and guest_home."""
     return {
         "kvm_absent": "cannot access '/dev/kvm'" in checks["kvm"],
         "host_invisible": no_vmm_procs(checks["vmm"])
-        and host_home_is_invisible(checks["guest_home"], home),
+        and host_home_is_invisible(checks["guest_home"], homes),
     }
 
 
@@ -395,12 +412,14 @@ def run_prove(mode: str) -> int:
     print(f"BS-00 time_to_userspace_ms={t_init * 1000:.1f}")
     serial_log.write_text(boot_buf)
 
+    homes = resolved_host_homes()
+    home_probe = host_invisibility_probe(homes)
     checks: dict[str, str] = {}
     by_key: dict[str, str] = {}
     for key, cmd in [
         ("kvm", "ls /dev/kvm 2>&1"),
         ("vmm", vmm_probe()),
-        ("guest_home", host_invisibility_probe()),
+        ("guest_home", home_probe),
         ("uname", "uname -a"),
     ]:
         assert ctx.proc.stdin is not None
@@ -411,9 +430,10 @@ def run_prove(mode: str) -> int:
         by_key[key] = chunk
         print(f"=== guest: {cmd} ===")
         print(chunk)
-    verdicts = spot_checks(by_key, resolved_home())
+
+    verdicts = spot_checks(by_key, homes)
     print(f"spot_check_kvm_absent={verdicts['kvm_absent']}")
-    print(f"spot_check_host_invisible={verdicts['host_invisible']}")
+    print(f"spot_check_host_invisible={verdicts['host_invisible']} homes={len(homes)}")
 
     vsock_result: dict = {"ok": False}
     vsock_thread = threading.Thread(

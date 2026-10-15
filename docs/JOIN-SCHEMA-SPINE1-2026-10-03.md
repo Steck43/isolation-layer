@@ -36,4 +36,4 @@ Until `serve` lands: CLI prove as manager user is the API. Future UDS `0600` man
 
 ## Audit tip (W4.7)
 
-Filed: `_incoming/cursor/AUDIT-TIP-HOLD-SPINE1-2026-10-03.md` with full tip `243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c`.
+Filed (historical; the file is not in this repository): `_incoming/cursor/AUDIT-TIP-HOLD-SPINE1-2026-10-03.md` with full tip `243b8f1fc40c0f9ee0469c1554ae01d23a5a5c7370fba3d88afdf8040966fa6c`.
