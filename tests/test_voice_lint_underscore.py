@@ -122,3 +122,48 @@ CHARACTER_NAME_COMMIT = (
 )
 def test_the_character_name_in_more_shapes_passes(text: str) -> None:
     assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+# A verb use fails whatever stands around it: a quantifier subject, a list of
+# character names before it, quotes around it, or a preposition after it.
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("All three underscore the point.", id="quantifier-three"),
+        pytest.param("Both underscore the risk.", id="quantifier-both"),
+        pytest.param("Many underscore it.", id="quantifier-many"),
+        pytest.param("Several underscore the need for a pin.", id="quantifier-several"),
+        pytest.param("Each underscores the point.", id="quantifier-each"),
+        pytest.param("One underscores the risk early.", id="quantifier-one"),
+        pytest.param("The pin, the number, underscore the risk.", id="list-subject"),
+        pytest.param("A dot and a dash underscore the gap.", id="and-list-subject"),
+        pytest.param("The checks underscore, dash and all, the risk.", id="list-after"),
+        pytest.param('This "underscores" the point.', id="quoted-plural"),
+        pytest.param('They "underscore" the need.', id="quoted-singular"),
+        pytest.param("It 'underscores' the risk.", id="single-quoted"),
+        pytest.param("It underscores in practice how weak it is.", id="prep-in"),
+        pytest.param("This underscores with clarity.", id="prep-with"),
+        pytest.param("Results underscore in every run.", id="plural-prep-in"),
+        pytest.param("That underscores within a day.", id="prep-within"),
+        pytest.param("The runs underscore character flaws.", id="before-character"),
+    ],
+)
+def test_a_verb_use_in_every_shape_is_ai_vocabulary(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Split names on underscores.", id="after-on"),
+        pytest.param("Names written with underscores pass.", id="after-with"),
+        pytest.param("Two underscores mark a private name.", id="two-plural"),
+        pytest.param("Each underscore is kept.", id="each-singular"),
+        pytest.param('The term "underscore" is the name.', id="quoted-name"),
+        pytest.param("Join the parts by underscore, dash or dot.", id="list-after-by"),
+        pytest.param("Keep the underscore character.", id="the-character"),
+        pytest.param("Use an underscore separator.", id="an-separator"),
+    ],
+)
+def test_the_character_name_in_its_tight_shapes_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
