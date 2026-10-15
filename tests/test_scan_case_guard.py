@@ -31,7 +31,7 @@ def _hits(entry: str, text: str) -> list[str]:
         pytest.param("re:(?s-i:\\bqvzss\\b)", id="other-flags-before"),
         pytest.param("re:(?-si:\\bqvzss\\b)", id="flags-off-together"),
         pytest.param("re:(?x-i: \\b qvzss \\b )", id="verbose-group"),
-        pytest.param("re:(?:a|(?-i:\\bqvzss\\b))", id="nested-group"),
+        pytest.param("re:(?:zqzqzq|(?-i:\\bqvzss\\b))", id="nested-group"),
         pytest.param("re:(?-i:\\bqvzss\\b)", id="plain-group"),
     ],
 )

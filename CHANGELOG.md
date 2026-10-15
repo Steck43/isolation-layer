@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A regex entry skips the casefolded view when any group in the parsed pattern turns IGNORECASE off, however the flag group is spelled (`(?s-i:`, `(?-si:`, `(?x-i:`). The check used to look for the text `(?-i`, so other spellings matched a case they were written to skip, and the same characters inside a character class turned the casefolded view off for nothing.
 - The public surface scan drops spacing combining marks (category Mc, such as U+0903) along with the other combining marks before matching, so one inside a name no longer hides it from a regex or short entry.
 - The public surface scan and the voice lint fold look-alike letters with Unicode's confusables data (UTS #39, confusables.txt 18.0.0): every non-ASCII code point whose skeleton is one ASCII letter or digit (1,582 pairs), plus 23 small capitals and Cyrillic and Greek letters that table leaves out. ASCII letters and digits are never folded. `scripts/gen_confusables.py` rebuilds the packed table; both files carry the same copy, and a test pins it and keeps the copies equal.
 - The voice lint reads text after NFKC with format and invisible characters dropped, so a fullwidth or invisible-character spelling of a flagged word is caught. A "that" followed by its own subject (we, you, they, users, people and the like) starts a relative clause, so the noun before it names the character, while a "that" followed by a plain noun stays the object of a verb.

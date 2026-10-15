@@ -354,7 +354,7 @@ class Entry:
             self._compact = None
             # A pattern that turns case sensitivity back on keeps it: the
             # casefolded view would let it match a case it was written to skip.
-            self._folded = "(?-i" not in raw
+            self._folded = not _turns_case_off(raw[3:])
         else:
             norm = normalise(raw).casefold()
             core = _compact(norm)
@@ -400,6 +400,27 @@ class Views:
 
     def __repr__(self) -> str:
         return "<views>"
+
+
+def _turns_case_off(pattern: str) -> bool:
+    """True when any group in the parsed pattern removes IGNORECASE, however
+    the flag group is spelled; the same characters inside a literal or a
+    character class do not count."""
+    try:
+        import re._parser as sre  # Python 3.11 and later
+    except ImportError:  # pragma: no cover - older interpreters
+        import sre_parse as sre
+
+    def walk(node: object) -> bool:
+        if isinstance(node, tuple) and len(node) == 2 and node[0] is sre.SUBPATTERN:
+            _group, _add, removed, _sub = node[1]
+            if removed & re.IGNORECASE:
+                return True
+        if isinstance(node, (list, tuple, sre.SubPattern)):
+            return any(walk(child) for child in node)
+        return False
+
+    return walk(sre.parse(pattern, re.IGNORECASE))
 
 
 def _literal_core(pattern: str) -> str:
