@@ -17,7 +17,9 @@ A binary file (NUL bytes, or bytes that are not UTF-8 and often control
 bytes) is judged by its readable runs: in each decoded view, the stretches of
 characters a reader can see, as `strings` reads them. The noise between runs is
 never decoded, joined or hashed, so a large image scans in time linear in its
-size, and a name or an address a reader could see is still found.
+size, and a name or an address a reader could see is still found. In a
+mostly-noise binary the built-in address and path rules read only runs of
+RULE_RUN or more characters, so a short accident in the noise is not one.
 
 Output never contains a private term: a hit names the rule and the entry
 index, and a path that itself carries a term is printed as its index in the
@@ -393,13 +395,20 @@ class Views:
     __slots__ = ("text", "folded", "plain", "base", "compact", "tokens")
 
     def __init__(
-        self, base: list[str], joined: list[str], obfuscated: list[str]
+        self,
+        base: list[str],
+        joined: list[str],
+        obfuscated: list[str],
+        rule_floor: int = 0,
     ) -> None:
         # Address and identity rules read the decoded forms; path and network
         # rules also read joined literals; private entries read everything,
-        # including reversed and rot13 forms.
-        self.base = _SVG_GEOMETRY.sub("", "\n".join(base))
-        self.plain = self.base + "\n" + _SVG_GEOMETRY.sub("", "\n".join(joined))
+        # including reversed and rot13 forms. With a rule floor (binary files),
+        # the built-in rules and the host-name tokens read only lines that long.
+        self.base = _floor(_SVG_GEOMETRY.sub("", "\n".join(base)), rule_floor)
+        self.plain = _floor(
+            self.base + "\n" + _SVG_GEOMETRY.sub("", "\n".join(joined)), rule_floor
+        )
         self.text = "\n".join(base + joined + obfuscated)
         self.folded = self.text.casefold()
         self.compact = "\n".join(
@@ -774,6 +783,32 @@ _READABLE_RUN = re.compile(
 )
 _ASCII_RUN = re.compile(r"[\t\n\r\x20-\x7e]{%d,}" % MIN_PLAIN)
 _CONTROL_BYTES = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# In a mostly-noise binary file (compressed image, archive), built-in address
+# and path rules read only runs this long. Compressed bytes hold short printable
+# runs by chance, and a short one can spell an address or a home path; across
+# 4 MB of seeded random bytes and a 2.4 MB screenshot, no run of 16 or more
+# readable characters matched a rule. A binary file that is mostly text (a
+# document with a few binary bytes, UTF-16 or UTF-32 text) keeps every run.
+# Private entries are never floored: they read every run.
+RULE_RUN = 16
+NOISE_SHARE = 0.3
+_TEXT_BYTES = bytes([0, 9, 10, 13, *range(0x20, 0x7F)])
+
+
+def is_noise(data: bytes) -> bool:
+    """More than NOISE_SHARE of the bytes, NUL aside, are control or high
+    bytes: random-looking data, not text with a few binary bytes in it."""
+    if not data:
+        return False
+    other = len(data.translate(None, _TEXT_BYTES))
+    return other > NOISE_SHARE * (len(data) - data.count(0))
+
+
+def _floor(text: str, floor: int) -> str:
+    """The lines of ``text`` at least ``floor`` characters long."""
+    if not floor:
+        return text
+    return "\n".join(line for line in text.split("\n") if len(line) >= floor)
 
 
 def is_binary(data: bytes) -> bool:
@@ -801,15 +836,17 @@ def readable_runs(data: bytes) -> list[str]:
 
 
 def views_for(data: bytes) -> Views:
+    binary = is_binary(data)
     forms: list[str] = []
     joined: list[str] = []
     obfuscated: list[str] = []
-    for text in readable_runs(data) if is_binary(data) else decodings(data):
+    for text in readable_runs(data) if binary else decodings(data):
         more, more_joined, more_obfuscated = text_forms(text)
         forms += more
         joined += more_joined
         obfuscated += more_obfuscated
-    return Views(forms, joined, obfuscated)
+    floor = RULE_RUN if binary and is_noise(data) else 0
+    return Views(forms, joined, obfuscated, floor)
 
 
 def _builtin_hits(views: Views) -> list[str]:
