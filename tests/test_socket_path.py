@@ -89,6 +89,53 @@ def test_service_scripts_default_to_the_unit_decision_chain() -> None:
         assert defaults == [want], (rel, defaults)
 
 
+CHAIN_NAME = "decision-chain" + ".jsonl"
+CHAIN_TOKEN = re.compile(r"[^\s\"'`(),=]*" + re.escape(CHAIN_NAME))
+
+
+def chain_mismatches(text: str, want: str) -> list[str]:
+    return [
+        t.split(":-", 1)[-1]
+        for t in CHAIN_TOKEN.findall(text)
+        if t.split(":-", 1)[-1] != want
+    ]
+
+
+# Every tracked default for the decision chain, in operator scripts, deploy
+# files and the Rust sources, is the unit's chain, never a per-user home path.
+def test_every_decision_chain_default_equals_the_unit_chain() -> None:
+    want = unit_env("AEGIS_DECISION_CHAIN")
+    assert want == "/var/lib/isolation-manager/" + CHAIN_NAME
+    files = tracked("scripts", "deploy", "crates/*/src")
+    checked = [
+        f
+        for f in files
+        if CHAIN_NAME in f.read_text(encoding="utf-8", errors="replace")
+    ]
+    assert len(checked) >= 10, [f.name for f in checked]
+    bad = {
+        f.relative_to(ROOT).as_posix(): chain_mismatches(
+            f.read_text(encoding="utf-8"), want
+        )
+        for f in checked
+    }
+    assert {k: v for k, v in bad.items() if v} == {}
+
+
+def test_a_home_relative_chain_default_is_caught() -> None:
+    want = "/var/lib/isolation-manager/" + CHAIN_NAME
+    rel = ".local/state/aegis/" + CHAIN_NAME
+    shell = f'C="${{AEGIS_DECISION_CHAIN:-${"HOME"}/{rel}}}"\n'.replace(
+        '${"HOME"}', "$" + "HOME"
+    )
+    python = f'str(Path.home() / "{rel}")\n'
+    rust = f'base.join("{rel}")\n'
+    assert chain_mismatches(shell, want) == ["$" + "HOME/" + rel]
+    assert chain_mismatches(python, want) == [rel]
+    assert chain_mismatches(rust, want) == [rel]
+    assert chain_mismatches(f'C="${{AEGIS_DECISION_CHAIN:-{want}}}"\n', want) == []
+
+
 def test_a_home_relative_default_is_caught() -> None:
     want = "/var/lib/isolation-manager/" + NAME
     home = "$" + "HOME" + "/.local/state/aegis/" + NAME

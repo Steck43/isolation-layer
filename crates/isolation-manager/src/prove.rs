@@ -424,10 +424,16 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     thread::sleep(Duration::from_secs(2));
 
     let manager_home = manager_home_path();
+    // Fail closed: without the host account list only the manager home is
+    // probed, and the verdict below requires the full list.
+    let homes_read = host_homes_from_passwd(&manager_home);
+    let homes = homes_read
+        .clone()
+        .unwrap_or_else(|_| vec![manager_home.clone()]);
     let commands = [
         "ls /dev/kvm 2>&1\n".to_string(),
         vmm_probe(),
-        host_invisibility_probe(&manager_home),
+        host_invisibility_probe(&homes),
     ];
     for cmd in commands {
         stdin
@@ -566,7 +572,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     let serial = vm.serial_buf.lock().unwrap().clone();
     let kvm_absent = serial.contains("cannot access '/dev/kvm'");
     let no_vmm = no_vmm_procs(&serial);
-    let no_home = host_home_is_invisible(&serial, &manager_home);
+    let no_home = host_homes_invisible(&homes_read, &serial);
 
     println!("spot_check_kvm_absent={kvm_absent}");
     println!("spot_check_host_invisible={}", no_vmm && no_home);
@@ -617,11 +623,46 @@ pub fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Guest probe: list `/home`, then test the manager account's resolved home.
-pub fn host_invisibility_probe(manager_home: &str) -> String {
+/// Every home on the host a guest must not see: each human account in
+/// `passwd` (uid 1000 and up, not `nobody`, with a login shell) plus the
+/// manager's own home. Sorted, without duplicates.
+pub fn host_homes(passwd: &str, manager_home: &str) -> Vec<String> {
+    let mut homes = vec![manager_home.to_string()];
+    for line in passwd.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 7 {
+            continue;
+        }
+        let Ok(uid) = fields[2].parse::<u32>() else {
+            continue;
+        };
+        let shell = fields[6].trim();
+        let no_login = shell.ends_with("/nologin") || shell.ends_with("/false");
+        if uid >= 1000 && uid != 65534 && !no_login && fields[5].starts_with('/') {
+            homes.push(fields[5].to_string());
+        }
+    }
+    homes.sort();
+    homes.dedup();
+    homes
+}
+
+/// Read the host account list; an unreadable list leaves only the manager's
+/// home, and `host_home_is_invisible` then fails closed on the missing check.
+pub fn host_homes_from_passwd(manager_home: &str) -> Result<Vec<String>, String> {
+    let passwd = std::fs::read_to_string("/etc/passwd")
+        .map_err(|e| format!("cannot read the host account list: {e}"))?;
+    Ok(host_homes(&passwd, manager_home))
+}
+
+/// Guest probe: list `/home`, then test every host home by path.
+pub fn host_invisibility_probe(homes: &[String]) -> String {
+    let quoted: Vec<String> = homes.iter().map(|h| shell_single_quote(h)).collect();
     format!(
-        "ls -1 /home 2>&1; if [ -e {quoted} ]; then echo {visible}; else echo {absent}; fi\n",
-        quoted = shell_single_quote(manager_home),
+        "ls -1 /home 2>&1; v=0; for h in {list}; do if [ -e \"$h\" ]; then v=1; echo {visible}; fi; done; \
+         if [ \"$v\" = 0 ]; then echo {absent}_{count}; fi\n",
+        list = quoted.join(" "),
+        count = homes.len(),
         visible = typed_marker(HOST_HOME_VISIBLE),
         absent = typed_marker(NO_HOST_HOME),
     )
@@ -659,20 +700,32 @@ pub fn no_vmm_procs(transcript: &str) -> bool {
     has_marker_line(transcript, NO_VMM_PROCS)
 }
 
-pub fn host_home_is_invisible(transcript: &str, manager_home: &str) -> bool {
-    if has_marker_line(transcript, HOST_HOME_VISIBLE)
-        || !has_marker_line(transcript, NO_HOST_HOME)
+/// The spot-check verdict: an unreadable host account list fails it.
+pub fn host_homes_invisible(homes_read: &Result<Vec<String>, String>, transcript: &str) -> bool {
+    match homes_read {
+        Ok(homes) => host_home_is_invisible(transcript, homes),
+        Err(_) => false,
+    }
+}
+
+pub fn host_home_is_invisible(transcript: &str, homes: &[String]) -> bool {
+    let done = format!("{NO_HOST_HOME}_{}", homes.len());
+    if homes.is_empty()
+        || has_marker_line(transcript, HOST_HOME_VISIBLE)
+        || !transcript.lines().any(|line| line.trim() == done)
     {
         return false;
     }
-    let name = std::path::Path::new(manager_home)
-        .file_name()
-        .and_then(|part| part.to_str())
-        .unwrap_or("");
-    if name.is_empty() {
-        return false;
+    for home in homes {
+        let name = std::path::Path::new(home)
+            .file_name()
+            .and_then(|part| part.to_str())
+            .unwrap_or("");
+        if name.is_empty() || transcript.lines().any(|line| line.trim() == name) {
+            return false;
+        }
     }
-    !transcript.lines().any(|line| line.trim() == name)
+    true
 }
 
 #[cfg(test)]
@@ -734,33 +787,105 @@ mod bind_tests {
 #[cfg(test)]
 mod home_probe_tests {
     use super::{
-        host_home_is_invisible, host_invisibility_probe, typed_marker, vmm_probe,
-        HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS,
+        host_home_is_invisible, host_homes, host_homes_invisible, host_invisibility_probe,
+        no_vmm_procs, typed_marker, vmm_probe, HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS,
     };
 
-    const MANAGER_HOME: &str = "/var/lib/isolation-manager";
+    const MANAGER: &str = "/var/lib/isolation-manager";
+    const PASSWD: &str = "root:x:0:0:root:/root:/bin/bash\n\
+        daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n\
+        op1:x:1000:1000:Operator:/srv/op1:/bin/bash\n\
+        op2:x:1001:1001::/srv/op2:/bin/zsh\n\
+        isolation:x:998:998::/var/lib/isolation-manager:/usr/sbin/nologin\n\
+        svc:x:1002:1002::/srv/svc:/usr/sbin/nologin\n\
+        locked:x:1003:1003::/srv/locked:/bin/false\n\
+        nobody:x:65534:65534:nobody:/nonexistent:/bin/sh\n\
+        op1b:x:1006:1006::/srv/op1:/bin/bash\n\
+        rel:x:1004:1004::relhome:/bin/sh\n\
+        short:x:1005:1005\n\
+        broken line\n";
 
-    #[test]
-    fn probe_lists_guest_home_and_the_resolved_manager_home() {
-        let home = MANAGER_HOME;
-        let probe = host_invisibility_probe(home);
-        assert!(probe.contains("ls -1 /home"));
-        assert!(probe.contains(home));
-        assert!(probe.contains(&typed_marker(NO_HOST_HOME)));
-        assert!(probe.contains(&typed_marker(HOST_HOME_VISIBLE)));
+    fn homes() -> Vec<String> {
+        host_homes(PASSWD, MANAGER)
     }
 
-    // The typed text is echoed by the serial console, so it must never hold
-    // a marker the verdict reads.
     #[test]
-    fn typed_probes_never_contain_a_plain_marker() {
-        let typed = [host_invisibility_probe(MANAGER_HOME), vmm_probe()];
-        for text in &typed {
-            for marker in [HOST_HOME_VISIBLE, NO_HOST_HOME, NO_VMM_PROCS] {
-                assert!(!text.contains(marker), "{marker} in {text}");
-            }
+    fn every_human_home_and_the_manager_home_are_probed() {
+        assert_eq!(homes(), vec!["/srv/op1", "/srv/op2", MANAGER]);
+        let probe = host_invisibility_probe(&homes());
+        assert!(probe.starts_with("ls -1 /home"));
+        for home in homes() {
+            assert!(probe.contains(&format!("'{home}'")), "{home}");
         }
+        assert!(probe.contains(&format!("{}_3", typed_marker(NO_HOST_HOME))));
+        assert!(probe.contains(&typed_marker(HOST_HOME_VISIBLE)));
+        for marker in [HOST_HOME_VISIBLE, NO_HOST_HOME] {
+            assert!(!probe.contains(marker), "{marker}");
+        }
+        assert!(!vmm_probe().contains(NO_VMM_PROCS));
         assert!(vmm_probe().contains(&typed_marker(NO_VMM_PROCS)));
+    }
+
+    #[test]
+    fn an_operator_home_listed_in_the_guest_fails() {
+        assert!(!host_home_is_invisible("op1\nNO_HOST_HOME_3\n", &homes()));
+        assert!(!host_home_is_invisible("op2\nNO_HOST_HOME_3\n", &homes()));
+    }
+
+    #[test]
+    fn a_visible_home_or_a_missing_or_short_check_fails_closed() {
+        let homes = homes();
+        assert!(!host_home_is_invisible("HOST_HOME_VISIBLE\nNO_HOST_HOME_3\n", &homes));
+        assert!(!host_home_is_invisible("isolation-manager\nNO_HOST_HOME_3\n", &homes));
+        assert!(!host_home_is_invisible("kvm only\n", &homes));
+        // A probe built from fewer homes does not satisfy the full list.
+        assert!(!host_home_is_invisible("ubuntu\nNO_HOST_HOME_1\n", &homes));
+        // The done marker inside an echoed command line is not the answer.
+        assert!(!host_home_is_invisible("x; echo NO_HOST_HOME_3; fi\n", &homes));
+        assert!(!host_home_is_invisible("ubuntu\nNO_HOST_HOME_0\n", &[]));
+        assert!(host_home_is_invisible("ubuntu\nNO_HOST_HOME_3\n", &homes));
+        // A home with no last component cannot be checked by name.
+        assert!(!host_home_is_invisible("ubuntu\nNO_HOST_HOME_1\n", &["/".to_string()]));
+    }
+
+    // The guest serial echoes every typed command, so the probe text itself
+    // reaches the transcript. Shapes follow docs/b1-results.json: the prompt
+    // plus the typed line, and a long line that scrolls to a `<` prefix.
+    const ECHO_PROBE: &str = "root@ubuntu-fc-uvm:~# ls -1 /home 2>&1; v=0; for h in '/srv/op1' '/srv/op2'; do if [ -e \"$h\" ]; then v=1; echo HOST_HOME_VISIBLE; fi; done; if [ \"$v\" = 0 ]; then echo NO_HOST_HOME_3; fi\n";
+    const SCROLLED_PROBE: &str = "<then v=1; echo HOST_HOME_VISIBLE; fi; done; if [ \"$v\" = 0 ]; then echo NO_HOST_HOME_3; fi\n";
+    const ECHO_VMM: &str = "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n";
+
+    #[test]
+    fn echoed_probe_with_a_clean_listing_and_the_absent_marker_is_invisible() {
+        let transcript = format!("{ECHO_PROBE}ubuntu\nNO_HOST_HOME_3\n");
+        assert!(host_home_is_invisible(&transcript, &homes()));
+        let scrolled = format!("{SCROLLED_PROBE}ubuntu\r\nNO_HOST_HOME_3\r\n");
+        assert!(host_home_is_invisible(&scrolled, &homes()));
+    }
+
+    #[test]
+    fn the_visible_marker_on_its_own_line_is_visible() {
+        let transcript = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n");
+        assert!(!host_home_is_invisible(&transcript, &homes()));
+        let both = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\nNO_HOST_HOME_3\n");
+        assert!(!host_home_is_invisible(&both, &homes()));
+    }
+
+    #[test]
+    fn an_echo_with_no_marker_lines_is_not_invisible() {
+        assert!(!host_home_is_invisible(ECHO_PROBE, &homes()));
+        assert!(!host_home_is_invisible(SCROLLED_PROBE, &homes()));
+        let listing = format!("{ECHO_PROBE}ubuntu\n");
+        assert!(!host_home_is_invisible(&listing, &homes()));
+    }
+
+    #[test]
+    fn the_vmm_marker_counts_only_on_its_own_line() {
+        assert!(!no_vmm_procs(ECHO_VMM));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\n")));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\r\n")));
+        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS  \n")));
+        assert!(!no_vmm_procs("root 12 firecracker --api-sock x NO_VMM_PROCS\n"));
     }
 
     // A real shell turns each typed marker back into the plain marker.
@@ -777,63 +902,15 @@ mod home_probe_tests {
     }
 
     #[test]
-    fn visible_home_fails_and_a_missing_check_fails_closed() {
-        let home = "/var/lib/isolation-manager";
-        assert!(!host_home_is_invisible(
-            "ls: cannot access '/var/lib/isolation-manager': No such file or directory\nHOST_HOME_VISIBLE\n",
-            home
-        ));
-        assert!(!host_home_is_invisible("isolation-manager\nNO_HOST_HOME\n", home));
-        assert!(!host_home_is_invisible("kvm only\n", home));
-        assert!(host_home_is_invisible(
-            "ubuntu\nNO_HOST_HOME\n",
-            home
-        ));
-    }
-}
-
-#[cfg(test)]
-mod echo_marker_tests {
-    use super::{host_home_is_invisible, no_vmm_procs};
-
-    // The guest serial echoes every typed command, so the probe text itself
-    // reaches the transcript. Shapes follow docs/b1-results.json: the prompt
-    // plus the typed line, and a long line that scrolls to a `<` prefix.
-    const HOME: &str = "/var/lib/isolation-manager";
-    const ECHO_PROBE: &str = "root@ubuntu-fc-uvm:~# ls -1 /home 2>&1; if [ -e '/var/lib/isolation-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n";
-    const SCROLLED_PROBE: &str = "<-manager' ]; then echo HOST_HOME_VISIBLE; else echo NO_HOST_HOME; fi\n";
-    const ECHO_VMM: &str = "root@ubuntu-fc-uvm:~# \n<cracker|jailer' | grep -v grep || echo NO_VMM_PROCS\n";
-
-    #[test]
-    fn echoed_probe_with_a_clean_listing_and_the_absent_marker_is_invisible() {
-        let transcript = format!("{ECHO_PROBE}ubuntu\nNO_HOST_HOME\n");
-        assert!(host_home_is_invisible(&transcript, HOME));
-        let scrolled = format!("{SCROLLED_PROBE}ubuntu\r\nNO_HOST_HOME\r\n");
-        assert!(host_home_is_invisible(&scrolled, HOME));
+    fn an_unreadable_account_list_fails_the_spot_check() {
+        let transcript = "ubuntu\nNO_HOST_HOME_3\n";
+        assert!(host_homes_invisible(&Ok(homes()), transcript));
+        assert!(!host_homes_invisible(&Err("denied".to_string()), transcript));
     }
 
     #[test]
-    fn the_visible_marker_on_its_own_line_is_visible() {
-        let transcript = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\n");
-        assert!(!host_home_is_invisible(&transcript, HOME));
-        let both = format!("{ECHO_PROBE}ubuntu\nHOST_HOME_VISIBLE\nNO_HOST_HOME\n");
-        assert!(!host_home_is_invisible(&both, HOME));
-    }
-
-    #[test]
-    fn an_echo_with_no_marker_lines_is_not_invisible() {
-        assert!(!host_home_is_invisible(ECHO_PROBE, HOME));
-        assert!(!host_home_is_invisible(SCROLLED_PROBE, HOME));
-        let both = format!("{ECHO_PROBE}ubuntu\n");
-        assert!(!host_home_is_invisible(&both, HOME));
-    }
-
-    #[test]
-    fn the_vmm_marker_counts_only_on_its_own_line() {
-        assert!(!no_vmm_procs(ECHO_VMM));
-        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\n")));
-        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS\r\n")));
-        assert!(no_vmm_procs(&format!("{ECHO_VMM}NO_VMM_PROCS  \n")));
-        assert!(!no_vmm_procs("root 12 firecracker --api-sock x NO_VMM_PROCS\n"));
+    fn an_empty_or_unparsed_account_list_still_probes_the_manager_home() {
+        assert_eq!(host_homes("", MANAGER), vec![MANAGER]);
+        assert_eq!(host_homes("garbage\n::::\n", MANAGER), vec![MANAGER]);
     }
 }

@@ -18,17 +18,170 @@ from pathlib import Path
 
 EXIT_FAIL = 2
 
+# --- "underscore": the word is AI vocabulary unless it names the character ----
+#
+# Every form (underscore, underscores, underscored, underscoring) is flagged in
+# any use. Only the singular or plural noun passes, and only in these shapes:
+#   - right after a word that cannot start a subject: a determiner or
+#     possessive (the, a, an, no, any, every, its, their), a position or
+#     count adjective (leading, trailing, double, single, lone, literal), a
+#     preposition (on, by, with, in, of, between), the base, past or -ing form
+#     of a verb that takes it as an object (use, allowed, replacing), or
+#     "first" or "last" after a determiner ("the first underscore");
+#   - right after a word that can start a subject, only when number agrees
+#     with the noun and no object follows: a singular one (this, each, one)
+#     with "underscore", a plural one (these, those, both, many, some, all, a
+#     number) with "underscores", or a verb form that is also a plural noun
+#     (uses, matches, holds) with "underscores";
+#   - right after "that", or a bare "first" or "last", only when a plain noun
+#     ending follows: the end of the sentence, is, are, was or were, the
+#     glyph in brackets, or another character name in a list;
+#   - joined to another word by a hyphen ("underscore-prefixed",
+#     "double-underscore");
+#   - at the start of a sentence, when what follows is is, are, was, were, a
+#     preposition, the end of the sentence, or the rest of a list of character
+#     names;
+#   - in a list after another character name ("a dash, underscore or dot")
+#     when what follows ends the list, names another character, or is one of
+#     a few subject verbs (splits, separates, marks, is, are);
+#   - right before the glyph in brackets ("underscore (_)") or "as the
+#     character";
+#   - quoted, when the closing quote is followed by punctuation, the end of the
+#     text, or one of is, was, as, means, names, wherever.
+# Anything else fails, so a noun in another shape is flagged too (fails safe).
+_NAMES = (
+    r"(?:dash|hyphen|dot|period|slash|backslash|space|colon|semicolon|comma|"
+    r"letter|digit|number|plus|tilde|asterisk)(?:e?s)?"
+)
+_OBJECT_VERBS = (
+    r"allow|use|replace|strip|drop|keep|add|remove|contain|hold|accept|"
+    r"reject|permit|forbid|escape|match|insert|join|split"
+)
+_STRICT = (
+    r"the|an?|no|any|every|its|their|our|your|my|double|triple|leading|"
+    r"trailing|extra|literal|final|lone|single|escaped|on|by|with|without|in|"
+    r"into|from|for|between|than|like|of|about|at|before|after|around|inside|"
+    r"per|via|(?:" + _OBJECT_VERBS + r")(?:e?d|ing)?"
+)
+_LEFT_STRICT = re.compile(r"\b(?:" + _STRICT + r")\s+$", re.I)
+_LEFT_ORDINAL = re.compile(
+    r"\b(?:the|its|their|a|each|every|this|that)\s+(?:first|last)\s+$", re.I
+)
+_LEFT_ONE = re.compile(r"\b(?:this|each|one|another)\s+$", re.I)
+_LEFT_MANY = re.compile(
+    r"\b(?:these|those|both|many|several|some|few|fewer|more|multiple|all|"
+    r"two|three|four|five|(?:" + _OBJECT_VERBS + r")e?s)\s+$",
+    re.I,
+)
+_LEFT_BARE = re.compile(r"\b(?:that|first|last)\s+$", re.I)
+_OBJECT_NEXT = re.compile(
+    r"\s+(?:the|an?|how|why|what|that|this|these|those|its|our|their|his|her|"
+    r"it|them|us|your|my)\b",
+    re.I,
+)
+_NOUN_END = re.compile(
+    r"\s*(?:$|[.;:!?)])|\s+(?:is|are|was|were)\b|\s*\(\s*(?:_|`_`|\"_\"|'_')?\s*\)"
+    r"|\s*(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)(?:an?\s+|the\s+)?"
+    + _NAMES
+    + r"\b",
+    re.I,
+)
+_SENTENCE_NEXT = re.compile(
+    r"\s+(?:in|inside|within|with|between|from|at|on|of|for|before|after)\b",
+    re.I,
+)
+_LEFT_LIST = re.compile(
+    r"\b" + _NAMES + r"(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)$", re.I
+)
+_SENTENCE_START = re.compile(r"(?:^|[.!?:;(\n])\s*$")
+_LIST_END = re.compile(
+    r"(?:\s*(?:$|[.;:!?)])|\s*(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)"
+    r"(?:an?\s+|the\s+)?" + _NAMES + r"\b|\s*,?\s+(?:split|separate|mark|join)s?\b|"
+    r"\s*,?\s+(?:is|are|was|were|may|can|must)\b)",
+    re.I,
+)
+_LIST_NEXT = re.compile(
+    r"\s*(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)(?:an?\s+|the\s+)?"
+    + _NAMES
+    + r"\b",
+    re.I,
+)
+_GLYPH_OR_AS = re.compile(
+    r"\s*\(\s*(?:_|`_`|\"_\"|'_')?\s*\)|\s+as\s+the\s+(?:_\s+)?character\b", re.I
+)
+_QUOTED_END = re.compile(
+    r"\s*(?:$|[.,;:!?)]|(?:is|was|as|means|names|wherever)\b)", re.I
+)
+_UNDERSCORE = re.compile(r"\bunderscor(?:e|es|ed|ing)\b", re.I)
+
+
+class _UnderscoreVocab:
+    """A pattern stand-in: finditer yields every form of the word except the
+    noun in one of the shapes listed above, so every verb use is a hit. A word
+    on the left that can start a subject never exempts the word by itself:
+    number agreement and what follows decide."""
+
+    def finditer(self, text: str):
+        for m in _UNDERSCORE.finditer(text):
+            if not self._names_the_character(text, m):
+                yield m
+
+    @staticmethod
+    def _names_the_character(text: str, m: re.Match[str]) -> bool:
+        word = m.group(0).lower()
+        if word not in ("underscore", "underscores"):
+            return False
+        plural = word == "underscores"
+        before = text[max(0, m.start() - 60) : m.start()]
+        after = text[m.end() : m.end() + 60]
+        for quote in ('"', "'"):
+            if before.endswith(quote) and after.startswith(quote):
+                return bool(_QUOTED_END.match(after[1:]))
+        if before.endswith("-") or re.match(r"-\w", after):
+            return True
+        if _GLYPH_OR_AS.match(after):
+            return True
+        if _LEFT_ORDINAL.search(before):
+            return True
+        if _LEFT_BARE.search(before):
+            return bool(_NOUN_END.match(after))
+        if _LEFT_ONE.search(before):
+            return not plural and not _OBJECT_NEXT.match(after)
+        if _LEFT_MANY.search(before):
+            return plural and not _OBJECT_NEXT.match(after)
+        if _LEFT_STRICT.search(before):
+            return True
+        if _LEFT_LIST.search(before):
+            return bool(_LIST_END.match(after))
+        if _SENTENCE_START.search(text[: m.start()]):
+            return bool(
+                _LIST_NEXT.match(after)
+                or _NOUN_END.match(after)
+                or _SENTENCE_NEXT.match(after)
+            )
+        return False
+
+
 # (rule_id, severity, pattern, what, fix) — patterns from egress-voice bars.
-RULES: list[tuple[str, str, re.Pattern[str], str, str]] = [
+RULES: list[tuple[str, str, re.Pattern[str] | _UnderscoreVocab, str, str]] = [
     (
         "AI-VOCAB",
         "BLOCK",
         re.compile(
             r"\b(additionally|crucial|delve|enduring|enhance|fostering|garner|"
-            r"interplay|intricate|pivotal|showcase|tapestry|testament|underscore|"
+            r"interplay|intricate|pivotal|showcase|tapestry|testament|"
             r"vibrant|landscape)\b",
             re.I,
         ),
+        "AI vocabulary / abstract landscape metaphor",
+        "Use a plain concrete word",
+    ),
+    (
+        # Every form of "underscore" is AI vocabulary in any use, except the
+        # noun that names the _ character. See _UnderscoreVocab.
+        "AI-VOCAB",
+        "BLOCK",
+        _UnderscoreVocab(),
         "AI vocabulary / abstract landscape metaphor",
         "Use a plain concrete word",
     ),

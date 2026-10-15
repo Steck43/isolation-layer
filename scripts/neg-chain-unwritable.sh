@@ -6,7 +6,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 cd "$HOME/isolation-layer"
 
 ANCHOR="${REQUIRE_ANCESTOR:-b036fb0fa5ddb09041e3cbc48f0dd2adc01f78df3f1ca83326137de0aa253f0c}"
-SRC="${AEGIS_DECISION_CHAIN:-$HOME/.local/state/aegis/decision-chain.jsonl}"
+SRC="${AEGIS_DECISION_CHAIN:-/var/lib/isolation-manager/decision-chain.jsonl}"
 WORK=$(mktemp /tmp/aegis-ro-chain.XXXXXX.jsonl)
 cp "$SRC" "$WORK"
 chmod 0444 "$WORK"
