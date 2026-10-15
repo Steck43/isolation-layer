@@ -78,3 +78,62 @@ def test_the_error_names_indexes_only() -> None:
 )
 def test_distinct_entries_still_load(raw: str) -> None:
     assert len(scan.load_entries(raw, 2)) == 3
+
+
+# A regex entry is no way around the count. One that is only a literal name
+# counts as that name, regex keys are compared without case, and the canary
+# cannot be listed again as a regex.
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        pytest.param(
+            f"{CANARY}\n{FAKE}\nre:{FAKE}\n",
+            "entry 2: duplicates entry 1",
+            id="literal-regex-after-plain",
+        ),
+        pytest.param(
+            f"{CANARY}\nre:{FAKE}\n{FAKE.upper()}\n",
+            "entry 2: duplicates entry 1",
+            id="plain-after-literal-regex",
+        ),
+        pytest.param(
+            f"{CANARY}\n{FAKE}.{OTHER}\nre:{FAKE}\\.{OTHER}\n",
+            "entry 2: duplicates entry 1",
+            id="escaped-literal-regex",
+        ),
+        pytest.param(
+            f"{CANARY}\nre:\\b{FAKE}\\b\nre:\\b{FAKE.upper()}\\b\n",
+            "entry 2: duplicates entry 1",
+            id="regex-case-only",
+        ),
+        pytest.param(
+            f"{CANARY}\n{FAKE}\nre:{CANARY}\n",
+            "entry 2: is another spelling of the canary",
+            id="regex-canary",
+        ),
+        pytest.param(
+            f"{CANARY}\n{FAKE}\nre:{CANARY.upper()}\n",
+            "entry 2: is another spelling of the canary",
+            id="regex-canary-case",
+        ),
+    ],
+)
+def test_a_regex_entry_never_pads_the_count(raw: str, message: str) -> None:
+    with pytest.raises(scan.ListError, match=message) as info:
+        scan.load_entries(raw, 2)
+    text = str(info.value)
+    assert FAKE not in text.casefold() and CANARY not in text.casefold(), text
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(f"{CANARY}\n{FAKE}\nre:{FAKE}s?\n", id="quantifier"),
+        pytest.param(f"{CANARY}\n{FAKE}\nre:{FAKE}|{OTHER}\n", id="alternation"),
+        pytest.param(f"{CANARY}\n{FAKE}\nre:{FAKE}\\d?\n", id="digit-class"),
+    ],
+)
+def test_a_genuine_regex_beside_the_plain_name_still_loads(raw: str) -> None:
+    assert len(scan.load_entries(raw, 2)) == 3
