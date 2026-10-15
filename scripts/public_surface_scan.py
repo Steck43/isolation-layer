@@ -253,6 +253,22 @@ def load_entries(raw: str, expect: int) -> list[Entry]:
     if not lines:
         raise ListError("private list is empty")
     entries = [Entry(i, line) for i, line in enumerate(lines)]
+    # Padding cannot meet the exact count: an entry that repeats an earlier
+    # one after normalise().casefold() and whitespace folding, a regex with
+    # the same text, or another spelling of the canary is refused by index.
+    seen: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        if entries[index].canary:
+            continue  # counted below: the canary must appear exactly once
+        if line.startswith("re:"):
+            key = line
+        else:
+            key = " ".join(normalise(line).casefold().split())
+            if key == CANARY:
+                raise ListError(f"entry {index}: is another spelling of the canary")
+        if key in seen:
+            raise ListError(f"entry {index}: duplicates entry {seen[key]}")
+        seen[key] = index
     canaries = [e for e in entries if e.canary]
     if len(canaries) != 1:
         raise ListError(
