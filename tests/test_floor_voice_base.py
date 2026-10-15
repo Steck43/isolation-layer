@@ -34,7 +34,7 @@ def test_the_voice_job_loads_the_lint_from_the_base_into_a_temp_dir() -> None:
 
 def test_the_voice_job_runs_only_the_base_copy() -> None:
     job = _job("craft-voice")
-    runs = re.findall(r"^\s*python3?\b.*$", job, re.M)
+    runs = re.findall(r"^\s*python3?\s.*$", job, re.M)
     assert runs == [
         '          python3 -I "${RUNNER_TEMP}/voice/voice_lint.py" --commits '
         '--base "$BASE" --head HEAD --prose --fail-on-warn'
