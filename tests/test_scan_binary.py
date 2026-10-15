@@ -83,3 +83,50 @@ def test_an_address_written_inside_a_binary_file_is_still_found() -> None:
         + _noise(64, seed=5)
     )
     assert "user-at-host" in scan.scan_bytes(data, _entries())
+
+
+# --- noise in a binary file is not an address or a path ----------------------------
+# Two byte windows a compressed screenshot held: decoded, each reads as a short
+# user-at-host or a tilde home path between control bytes and decode errors.
+# Written as byte values: as escapes, this file's own text would decode to them.
+NOISE_WINDOWS = [
+    pytest.param(
+        bytes([0, 0, 0, 98, 128, 159, 121, 77, 64, 102, 102, 145, 140, 24]),
+        id="user-at-host",
+    ),
+    pytest.param(
+        bytes(
+            [112, 143, 112, 66, 137, 140, 126, 111, 69, 47, 132, 16, 50, 122, 101, 0]
+        ),
+        id="tilde-path",
+    ),
+]
+
+
+@pytest.mark.parametrize("window", NOISE_WINDOWS)
+def test_a_short_accident_in_binary_noise_is_not_a_built_in_hit(window: bytes) -> None:
+    data = b"\x89PNG\r\n\x1a\n\x00" + window + _noise(256, seed=6)
+    assert scan.scan_bytes(data, _entries()) == []
+
+
+def test_random_bytes_raise_no_built_in_hit() -> None:
+    data = b"\x89PNG\r\n\x1a\n" + _noise(1024 * 1024, seed=7)
+    assert scan.scan_bytes(data, _entries()) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        pytest.param(b"ssh qvzkxj" + b"@" + b"zqxhost", id="user-at-host"),
+        # The tilde comes from its byte value so no literal join here is a path.
+        pytest.param(b"cd " + bytes([126]) + b"qvzkxj/notes", id="tilde-path"),
+    ],
+)
+def test_a_short_address_in_a_text_file_still_hits(line: bytes) -> None:
+    assert scan.scan_bytes(line + b"\n", _entries()) != []
+
+
+def test_a_home_path_written_inside_a_binary_file_is_still_found() -> None:
+    tilde = bytes([126])
+    data = _noise(4096, seed=8) + b"\x00saved from " + tilde + b"qvzkxj/notes/today\x00"
+    assert "tilde-user-path" in scan.scan_bytes(data, _entries())
