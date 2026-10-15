@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The public surface scan expects 34 private entries (`EXPECTED_ENTRIES`), the size of the rebuilt list. CI runs the base copy of the scanner, so the `LEAK_DENYLIST` secret must be replaced with the 34-entry list when this merges; until then the old 13-entry secret fails the scan.
+- The public surface scan expects 36 private entries (`EXPECTED_ENTRIES`), the size of the rebuilt list. CI runs the base copy of the scanner, so the `LEAK_DENYLIST` secret must be replaced with the 36-entry list when this merges; until then the old 13-entry secret fails the scan.
 - Two private names are removed from tracked text: a review note in `receipts/T-REP-06-BOXENTRY-LIVE-2026-10-09.md` and a cross-reference in `docs/isolation-layer-build-spec-v1.5.md`. Earlier commits still hold them; history is not rewritten.
 - `scripts/public_surface_scan.py` carries the expected entry count as `EXPECTED_ENTRIES` and uses it when `--expect-entries` is not given. A CI job that runs the base branch copy of the scanner then takes the count from the base, not from the change under review.
 - The step 12b receipt notes say that the redaction of the raw prove bytes also renamed one environment key to `BOX_LIVE_PROVE`. Both digests stay recorded.
