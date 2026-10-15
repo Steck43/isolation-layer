@@ -159,7 +159,7 @@ def test_main_defaults_the_entry_count_to_the_scanner_constant(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert scan.EXPECTED_ENTRIES == 34
+    assert scan.EXPECTED_ENTRIES == 36
     names = [f"{FAKE}{i:02d}" for i in range(scan.EXPECTED_ENTRIES)]
     monkeypatch.setenv("LEAK_DENYLIST", "\n".join([CANARY, *names]) + "\n")
     assert scan.main(["--root", str(clean_tree)]) == 0
