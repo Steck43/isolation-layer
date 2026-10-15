@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Every private entry also reads the casefolded text, so a fold that case-insensitive matching alone misses (a sharp s for "ss") no longer hides a name from a regex or short entry. A regex that turns case sensitivity back on with `(?-i` skips that view and stays case-sensitive.
 - The public surface scan drops combining marks (categories Mn and Me) after NFKC and the ignorable strip. NFKC composes a letter and a following mark into a different precomposed letter, so a name with a dot above, an accent, an overlay or an enclosing mark inside hid from regex and short entries (long plain entries already matched through the separator-free view). A dotted capital I matches the plain i entry in every form.
 - The craft (voice) job runs the base branch's voice lint, loaded into the runner's temp dir, and fails closed when the base has none, so a change to `.floor/craft/voice_lint.py` no longer judges itself. `resolve_base.sh` is still sourced from the change under review.
 - The public surface scan drops every Unicode default-ignorable code point (the combining grapheme joiner, Hangul fillers, variation selectors, tag characters, joiners, the soft hyphen, the byte-order mark and the rest of the set) and every format character after NFKC, so an invisible character inside a private name no longer hides it, in file text or in a tracked path, for plain and regex entries alike. The set is a table of ranges from Unicode's Default_Ignorable_Code_Point property.

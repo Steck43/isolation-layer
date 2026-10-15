@@ -101,3 +101,11 @@ def test_a_case_fold_spelling_of_a_name_matches_every_entry_form(
     folded = name.replace("ss", sharp, 1)
     data = f"notes on {folded} here\n".encode()
     assert scan.scan_bytes(data, _entries(entry)) == ["private entry 1"]
+
+
+def test_a_case_sensitive_regex_entry_stays_case_sensitive() -> None:
+    entry = "re:(?-i:\\bQvz" + "kxj\\b)"
+    assert scan.scan_bytes(f"notes on {NAME} here\n".encode(), _entries(entry)) == []
+    assert scan.scan_bytes(
+        f"notes on {NAME.capitalize()} here\n".encode(), _entries(entry)
+    ) == ["private entry 1"]
