@@ -104,6 +104,10 @@ def test_the_ignorable_table_covers_the_unicode_set_it_names() -> None:
 
 
 def test_visible_neighbours_of_the_ignorables_stay() -> None:
-    for cp in (0x00AC, 0x00AE, 0x034E, 0x0350, 0x115E, 0x1161, 0x3163, 0x3165,
+    for cp in (0x00AC, 0x00AE, 0x115E, 0x1161, 0x3163, 0x3165,
                0xFDFF, 0xFE10, 0xE1000):  # fmt: skip
         assert scan.normalise("a" + chr(cp) + "b") != "ab", hex(cp)
+    # The combining marks beside the joiner are not ignorable; normalise drops
+    # them as combining marks (see test_scan_combining.py), not by this table.
+    for cp in (0x034E, 0x0350):
+        assert not scan._ignorable(chr(cp)), hex(cp)

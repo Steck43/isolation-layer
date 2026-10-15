@@ -62,7 +62,8 @@ ALLOWED_IDENTIFIERS = frozenset(
 )
 _IDENT = re.compile(r"[A-Za-z0-9_]+")
 
-# Latin look-alikes from Cyrillic and Greek, folded before matching.
+# Latin look-alikes from Cyrillic, Greek, Armenian and Cherokee, and Latin small
+# capitals, folded before matching.
 _CONFUSABLES = str.maketrans(
     {
         "а": "a",
@@ -97,6 +98,54 @@ _CONFUSABLES = str.maketrans(
         "κ": "k",
         "ν": "v",
         "Ο": "O",
+        # Armenian letters drawn like Latin ones.
+        "օ": "o",
+        "ս": "u",
+        "հ": "h",
+        "ո": "n",
+        "ց": "g",
+        "Օ": "O",
+        "Ս": "U",
+        # Cherokee capitals drawn like Latin capitals.
+        "Ꭰ": "D",
+        "Ꭱ": "R",
+        "Ꭲ": "T",
+        "Ꭹ": "Y",
+        "Ꭺ": "A",
+        "Ꭻ": "J",
+        "Ꭼ": "E",
+        "Ꮃ": "W",
+        "Ꮇ": "M",
+        "Ꮋ": "H",
+        "Ꮓ": "Z",
+        "Ꮪ": "S",
+        "Ꮮ": "L",
+        "Ꮯ": "C",
+        "Ꮲ": "P",
+        # Latin small capitals, which NFKC leaves alone.
+        "ᴀ": "a",
+        "ʙ": "b",
+        "ᴄ": "c",
+        "ᴅ": "d",
+        "ᴇ": "e",
+        "ɢ": "g",
+        "ʜ": "h",
+        "ɪ": "i",
+        "ᴊ": "j",
+        "ᴋ": "k",
+        "ʟ": "l",
+        "ᴍ": "m",
+        "ɴ": "n",
+        "ᴏ": "o",
+        "ᴘ": "p",
+        "ʀ": "r",
+        "ꜱ": "s",
+        "ᴛ": "t",
+        "ᴜ": "u",
+        "ᴠ": "v",
+        "ᴡ": "w",
+        "ʏ": "y",
+        "ᴢ": "z",
     }
 )
 
@@ -185,7 +234,7 @@ class ListError(ValueError):
 class Entry:
     """One private term. Its repr never shows the term."""
 
-    __slots__ = ("index", "canary", "_rx", "_compact")
+    __slots__ = ("index", "canary", "_rx", "_compact", "_folded")
 
     def __init__(self, index: int, raw: str) -> None:
         self.index = index
@@ -201,6 +250,9 @@ class Entry:
                 raise ListError(f"entry {index}: cannot be shown to match anything")
             self._rx = rx
             self._compact = None
+            # A pattern that turns case sensitivity back on keeps it: the
+            # casefolded view would let it match a case it was written to skip.
+            self._folded = "(?-i" not in raw
         else:
             norm = normalise(raw).casefold()
             core = _compact(norm)
@@ -209,6 +261,7 @@ class Entry:
                     f"entry {index}: fewer than {MIN_PLAIN} letters or digits"
                 )
             self._rx = re.compile(re.escape(norm), re.IGNORECASE)
+            self._folded = True
             self._compact = core if len(core) >= MIN_COMPACT else None
 
     def __repr__(self) -> str:
@@ -217,13 +270,16 @@ class Entry:
     def hits(self, views: Views) -> bool:
         if self._rx.search(views.text):
             return True
+        # Case folding goes further than IGNORECASE (a sharp s folds to ss).
+        if self._folded and self._rx.search(views.folded):
+            return True
         return bool(self._compact and self._compact in views.compact)
 
 
 class Views:
     """Every decoded form of one input. Its repr never shows the text."""
 
-    __slots__ = ("text", "plain", "base", "compact", "tokens")
+    __slots__ = ("text", "folded", "plain", "base", "compact", "tokens")
 
     def __init__(
         self, base: list[str], joined: list[str], obfuscated: list[str]
@@ -234,6 +290,7 @@ class Views:
         self.base = _SVG_GEOMETRY.sub("", "\n".join(base))
         self.plain = self.base + "\n" + _SVG_GEOMETRY.sub("", "\n".join(joined))
         self.text = "\n".join(base + joined + obfuscated)
+        self.folded = self.text.casefold()
         self.compact = "\n".join(
             _compact(_drop_allowed(f).casefold()) for f in base + joined + obfuscated
         )
@@ -294,9 +351,13 @@ def _ignorable(ch: str) -> bool:
 
 def normalise(text: str) -> str:
     """NFKC, then drop every default-ignorable code point and format character,
-    then fold Latin look-alikes."""
+    then every combining mark (a letter plus a mark composes into a different
+    letter, so a mark inside a name hid it), then fold Latin look-alikes."""
     text = unicodedata.normalize("NFKC", text)
     text = "".join(ch for ch in text if not _ignorable(ch))
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Mn", "Me"))
+    text = unicodedata.normalize("NFC", text)
     return text.translate(_CONFUSABLES)
 
 
