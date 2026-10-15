@@ -14,6 +14,7 @@ import argparse
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 EXIT_FAIL = 2
@@ -30,9 +31,12 @@ EXIT_FAIL = 2
 #     object (use, allowed, replacing), after "first" or "last" following a
 #     determiner ("the first underscore"), or after "before" or "after", only
 #     when no object follows: a determiner, possessive or pronoun object after
-#     the word (the, a, this, its, them, it), or "that" not followed by a verb,
+#     the word (the, a, this, its, them, it), or "that" followed by neither a
+#     verb nor its own subject (we, you, they, users, people and the like),
 #     makes it a verb ("we added underscore the gap", "this first underscores
-#     it", "the run before underscores the risk");
+#     it", "the run before underscores the risk"); the text is read after
+#     NFKC with format and invisible characters dropped, so a fullwidth or
+#     invisible-character spelling is the same word;
 #   - right after a word that can start a subject, only when number agrees
 #     with the noun and no object follows: a singular one (this, each, one)
 #     with "underscore", a plural one (these, those, both, many, some, all, a
@@ -104,10 +108,23 @@ _RELATIVE_THAT = re.compile(
 )
 
 
+# "that" followed by its own subject starts a relative clause too
+# ("underscores that users type" names the character).
+_RELATIVE_SUBJECT = re.compile(
+    r"\s+that\s+(?:i|we|you|they|he|she|people|users|readers|writers|authors|"
+    r"someone|nobody|everyone|developers|editors|tools|scripts)\b",
+    re.I,
+)
+
+
 def _object_follows(after: str) -> bool:
     return bool(
         _OBJECT_AFTER.match(after)
-        or (_THAT_AFTER.match(after) and not _RELATIVE_THAT.match(after))
+        or (
+            _THAT_AFTER.match(after)
+            and not _RELATIVE_THAT.match(after)
+            and not _RELATIVE_SUBJECT.match(after)
+        )
     )
 
 
@@ -153,7 +170,8 @@ class _UnderscoreVocab:
     on the left that can start a subject never exempts the word by itself:
     number agreement and what follows decide. After a verb, a determiner with
     an ordinal, or before or after, an object following the word (including
-    it, and that when no verb follows it) makes it a verb."""
+    it, and that when neither a verb nor its own subject follows it) makes it
+    a verb."""
 
     def finditer(self, text: str):
         for m in _UNDERSCORE.finditer(text):
@@ -441,17 +459,48 @@ def mask_non_prose(text: str) -> str:
     return "".join(out)
 
 
+# Code points that render as nothing, folded out before matching so a word
+# with one inside is still read as the word (format characters, category Cf,
+# are dropped as well).
+_INVISIBLE = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFFA0, 0xFFA0),
+    (0xE0100, 0xE01EF),
+)
+
+
+def _fold(text: str) -> str:
+    """NFKC (fullwidth and compatibility letters become plain ones), then drop
+    format characters and the invisible code points above. Line feeds stay, so
+    line numbers counted on the folded text match the original."""
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(
+        ch
+        for ch in text
+        if unicodedata.category(ch) != "Cf"
+        and not any(lo <= ord(ch) <= hi for lo, hi in _INVISIBLE)
+    )
+
+
 def scan_text(label: str, text: str, *, fail_on_warn: bool) -> list[str]:
     hits: list[str] = []
-    # Match against masked text so quotations do not read as assertions, but
-    # report from the original: masking preserves every offset.
-    masked = mask_non_prose(text)
+    # Match against masked text so quotations do not read as assertions, then
+    # fold it so a fullwidth or invisible-character spelling still matches.
+    # Hits are located and quoted from the folded text: folding can change
+    # lengths but keeps every line feed.
+    masked = _fold(mask_non_prose(text))
     for rid, sev, pat, what, fix in RULES:
         if sev == "WARN" and not fail_on_warn:
             continue
         for m in pat.finditer(masked):
-            line_no = text[: m.start()].count("\n") + 1
-            snippet = text[m.start() : m.end()].replace("\n", " ")[:80]
+            line_no = masked[: m.start()].count("\n") + 1
+            snippet = masked[m.start() : m.end()].replace("\n", " ")[:80]
             hits.append(
                 f"{label}:{line_no}: {sev} {rid}: {what}. saw {snippet!r}. Fix: {fix}"
             )
