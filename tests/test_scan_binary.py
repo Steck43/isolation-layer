@@ -3,7 +3,7 @@
 A compressed image is near-random bytes. Every decoded view of those bytes used
 to run the full decode closure, literal joins and token hashing over noise, so a
 2.4 MB screenshot took longer than a CI job allows, and short accidents in the
-noise ("ab@cd", "~x/") read as a user-at-host or a home path. A name or an
+noise read as a user-at-host or a home path. A name or an
 address a reader could see in the file must still be found.
 """
 
@@ -76,7 +76,10 @@ def test_a_name_inside_a_binary_file_is_still_found(embed: bytes) -> None:
 def test_an_address_written_inside_a_binary_file_is_still_found() -> None:
     data = (
         _noise(4096, seed=4)
-        + b"\x00Author: qvzkxj@zqxbuildhost\x00"
+        # Built from parts so this file's own line is not an address.
+        + b"\x00Author: qvzkxj"
+        + b"@"
+        + b"zqxbuildhost\x00"
         + _noise(64, seed=5)
     )
     assert "user-at-host" in scan.scan_bytes(data, _entries())

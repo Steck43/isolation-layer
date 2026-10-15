@@ -13,6 +13,12 @@ case-insensitive substring after normalisation, and an entry starting with
 before the real scan runs, so an empty, truncated, or never-matching list
 fails.
 
+A binary file (NUL bytes, or bytes that are not UTF-8 and often control
+bytes) is judged by its readable runs: in each decoded view, the stretches of
+characters a reader can see, as `strings` reads them. The noise between runs is
+never decoded, joined or hashed, so a large image scans in time linear in its
+size, and a name or an address a reader could see is still found.
+
 Output never contains a private term: a hit names the rule and the entry
 index, and a path that itself carries a term is printed as its index in the
 tracked file list.
@@ -251,6 +257,9 @@ _CONFUSABLES = str.maketrans(
     }
 )
 
+# A control character or a decode-error mark: such a literal cannot be text a
+# reader sees, so it never takes part in a join.
+_UNREADABLE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]")
 _LITERAL = re.compile(r"""[rRbBuUfF]{0,2}("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')""")
 _JOINERS = ("", " ", "-", "_", ".", "/")
 _B64 = re.compile(r"[A-Za-z0-9+/_-]{8,}={0,2}")
@@ -483,11 +492,23 @@ def _literal_core(pattern: str) -> str:
     return core.replace("\\", "")
 
 
+_DIGESTS: dict[str, str] = {}
+
+
+def _digest(word: str) -> str:
+    """sha256 of a casefolded word, computed once per distinct word."""
+    digest = _DIGESTS.get(word)
+    if digest is None:
+        digest = hashlib.sha256(word.casefold().encode()).hexdigest()
+        if len(_DIGESTS) < 1 << 20:
+            _DIGESTS[word] = digest
+    return digest
+
+
 def _drop_allowed(text: str) -> str:
     def one(match: re.Match[str]) -> str:
         word = match.group(0)
-        digest = hashlib.sha256(word.casefold().encode()).hexdigest()
-        return " " if digest in ALLOWED_IDENTIFIERS else word
+        return " " if _digest(word) in ALLOWED_IDENTIFIERS else word
 
     return _IDENT.sub(one, text)
 
@@ -527,19 +548,32 @@ def _ignorable(ch: str) -> bool:
     )
 
 
+class _Drop(dict):
+    """A str.translate table that drops the characters a test picks, computed
+    once per distinct character, so a long text costs one table lookup a char."""
+
+    def __init__(self, drop) -> None:
+        super().__init__()
+        self._drop = drop
+
+    def __missing__(self, cp: int):
+        value = None if self._drop(chr(cp)) else cp
+        self[cp] = value
+        return value
+
+
+_DROP_IGNORABLE = _Drop(_ignorable)
+_DROP_MARKS = _Drop(lambda ch: unicodedata.category(ch) in ("Mn", "Mc", "Me"))
+
+
 def normalise(text: str) -> str:
     """NFKC, then drop every default-ignorable code point and format character,
     then every combining mark, spacing ones included (a letter plus a mark
     composes into a different letter, so a mark inside a name hid it), then
     fold Latin look-alikes."""
-    text = unicodedata.normalize("NFKC", text)
-    text = "".join(ch for ch in text if not _ignorable(ch))
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(
-        ch for ch in text if unicodedata.category(ch) not in ("Mn", "Mc", "Me")
-    )
-    text = unicodedata.normalize("NFC", text)
-    return text.translate(_CONFUSABLES)
+    text = unicodedata.normalize("NFKC", text).translate(_DROP_IGNORABLE)
+    text = unicodedata.normalize("NFD", text).translate(_DROP_MARKS)
+    return unicodedata.normalize("NFC", text).translate(_CONFUSABLES)
 
 
 def _token_hashes(text: str) -> frozenset[str]:
@@ -547,13 +581,17 @@ def _token_hashes(text: str) -> frozenset[str]:
     tokens = set(words)
     tokens.update(a + b for a, b in zip(words, words[1:]))
     tokens.update(a + b + c for a, b, c in zip(words, words[1:], words[2:]))
+    least = min(BUILTIN_HOST_LENGTHS)
     for match in _COMPOUND.finditer(text):
-        run = _compact(match.group(0)).casefold()
-        if len(run) > MAX_COMPOUND:
+        # A compound run holds only letters, digits and - _ . separators, and a
+        # run shorter than every host token yields no window.
+        run = match.group(0).replace("-", "").replace("_", "").replace(".", "")
+        if len(run) > MAX_COMPOUND or len(run) < least:
             continue
+        run = run.casefold()
         for size in BUILTIN_HOST_LENGTHS:
             tokens.update(run[i : i + size] for i in range(len(run) - size + 1))
-    return frozenset(hashlib.sha256(t.encode()).hexdigest() for t in tokens)
+    return frozenset(_digest(t) for t in tokens)
 
 
 def _regex_literal(pattern: str) -> str | None:
@@ -703,7 +741,11 @@ def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[st
     if continued != base:
         forms += _decoded_closure(continued)
     joined: list[str] = []
-    literals = [_drop_allowed(m.group(1)[1:-1]) for m in _LITERAL.finditer(base)]
+    literals = [
+        _drop_allowed(m.group(1)[1:-1])
+        for m in _LITERAL.finditer(base)
+        if not _UNREADABLE.search(m.group(1))
+    ]
     for size in range(2, 5):
         for i in range(len(literals) - size + 1):
             window = literals[i : i + size]
@@ -721,11 +763,48 @@ def text_forms(text: str, depth: int = 0) -> tuple[list[str], list[str], list[st
     return forms, [normalise(f) for f in joined], obfuscated
 
 
+# A binary file is judged by its readable runs, as `strings` reads one: in each
+# decoded view, the stretches of at least MIN_PLAIN characters a reader can see,
+# one per line. A name or an address a reader could see sits inside such a run;
+# the noise between runs cannot be text, so the decode closure, literal joins
+# and token hashing never run over it. The Latin-1 views keep ASCII runs only:
+# every byte is some Latin-1 character, so only ASCII there reads as text.
+_READABLE_RUN = re.compile(
+    r"[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]{%d,}" % MIN_PLAIN
+)
+_ASCII_RUN = re.compile(r"[\t\n\r\x20-\x7e]{%d,}" % MIN_PLAIN)
+_CONTROL_BYTES = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def is_binary(data: bytes) -> bool:
+    """NUL bytes, or bytes that are not UTF-8 and more than one in twenty a
+    control byte (a legacy-encoded text file is neither, so it stays text)."""
+    if b"\x00" in data:
+        return True
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return len(_CONTROL_BYTES.findall(data)) * 20 > len(data)
+    return False
+
+
+def readable_runs(data: bytes) -> list[str]:
+    """Each decoded view of binary bytes reduced to its readable runs."""
+    views = decodings(data)
+    latin = 2 if b"\x00" in data else 1
+    return [
+        "\n".join(
+            (_ASCII_RUN if i >= len(views) - latin else _READABLE_RUN).findall(text)
+        )
+        for i, text in enumerate(views)
+    ]
+
+
 def views_for(data: bytes) -> Views:
     forms: list[str] = []
     joined: list[str] = []
     obfuscated: list[str] = []
-    for text in decodings(data):
+    for text in readable_runs(data) if is_binary(data) else decodings(data):
         more, more_joined, more_obfuscated = text_forms(text)
         forms += more
         joined += more_joined
