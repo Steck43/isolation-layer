@@ -30,7 +30,6 @@ def _load(*entries: str) -> list[scan.Entry]:
         pytest.param(
             "re:\\bqvzkxj\\b", "re:(?:\\b)qvzkxj(?:\\b)", id="group-around-anchor"
         ),
-        pytest.param("re:\\bqvzkxj\\b", "re:\\bq{1}vzkxj\\b", id="repeat-once"),
         pytest.param(
             "re:\\bqvzkxj\\b", "re:(?i:\\bqvzkxj\\b)", id="redundant-flag-group"
         ),
@@ -38,12 +37,26 @@ def _load(*entries: str) -> list[scan.Entry]:
             "re:\\bqvzkxj\\b", "re:(?i)\\bqvzkxj\\b", id="redundant-global-flag"
         ),
         pytest.param("re:\\bqvzkxj\\b", "re:\\bQVZKXJ\\b", id="letter-case"),
-        pytest.param("re:\\bqv[z]kxj\\b", "re:\\bqvzkxj\\b", id="one-letter-class"),
     ],
 )
 def test_regex_padding_never_meets_the_count(first: str, second: str) -> None:
     with pytest.raises(scan.ListError, match=r"entry 2: duplicates entry 1"):
         _load(first, second)
+
+
+@pytest.mark.parametrize(
+    "padded",
+    [
+        pytest.param("re:\\bq{1}vzkxj\\b", id="repeat-once"),
+        pytest.param("re:\\bqv[z]kxj\\b", id="one-letter-class"),
+    ],
+)
+def test_padding_the_literal_check_cannot_read_is_refused_at_load(padded: str) -> None:
+    # The entry check already refuses these (a pattern must match its own
+    # literal text); the key would also fold them into the plain spelling.
+    with pytest.raises(scan.ListError, match=r"entry 2: "):
+        _load("re:\\bqvzkxj\\b", padded)
+    assert scan._regex_key(padded[3:]) == scan._regex_key("\\bqvzkxj\\b")
 
 
 @pytest.mark.parametrize(

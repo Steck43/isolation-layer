@@ -402,14 +402,69 @@ class Views:
         return "<views>"
 
 
-def _turns_case_off(pattern: str) -> bool:
-    """True when any group in the parsed pattern removes IGNORECASE, however
-    the flag group is spelled; the same characters inside a literal or a
-    character class do not count."""
+def _sre():
     try:
         import re._parser as sre  # Python 3.11 and later
     except ImportError:  # pragma: no cover - older interpreters
         import sre_parse as sre
+    return sre
+
+
+def _regex_key(pattern: str) -> str:
+    """A key two spellings of the same regex share, read from the parsed
+    pattern: groups that only group (or set a flag that is already set) are
+    dropped, a repeat of exactly once is its body, a one-letter class is the
+    letter, and letters compare without case except inside a group that turns
+    case off. Anything else is kept as parsed, so patterns that match different
+    text keep different keys."""
+    sre = _sre()
+    repeats = {sre.MAX_REPEAT, sre.MIN_REPEAT}
+    repeats.add(getattr(sre, "POSSESSIVE_REPEAT", sre.MAX_REPEAT))
+
+    def letter(code: int, nocase: bool) -> tuple:
+        lower = chr(code).lower()
+        return ("lit", ord(lower) if nocase and len(lower) == 1 else code)
+
+    def canon(items, nocase: bool) -> list:
+        out: list = []
+        for op, av in items:
+            if op is sre.SUBPATTERN:
+                group, add, removed, sub = av
+                inner = (nocase or bool(add & re.IGNORECASE)) and not (
+                    removed & re.IGNORECASE
+                )
+                body = canon(sub, inner)
+                other_flags = (add | removed) & ~re.IGNORECASE
+                if group is None and inner == nocase and not other_flags:
+                    out.extend(body)
+                else:
+                    out.append(("group", group is not None, add, removed, tuple(body)))
+            elif op in repeats and av[0] == av[1] == 1:
+                out.extend(canon(av[2], nocase))
+            elif op in repeats:
+                out.append((str(op), av[0], av[1], tuple(canon(av[2], nocase))))
+            elif op is sre.LITERAL:
+                out.append(letter(av, nocase))
+            elif op is sre.IN and len(av) == 1 and av[0][0] is sre.LITERAL:
+                out.append(letter(av[0][1], nocase))
+            elif op is sre.BRANCH:
+                out.append(("branch", tuple(tuple(canon(b, nocase)) for b in av[1])))
+            elif op in (sre.ASSERT, sre.ASSERT_NOT):
+                out.append((str(op), av[0], tuple(canon(av[1], nocase))))
+            else:
+                out.append((str(op), repr(av)))
+        return out
+
+    tree = sre.parse(pattern, re.IGNORECASE)
+    flags = tree.state.flags & ~(re.IGNORECASE | re.UNICODE)
+    return repr((flags, tuple(canon(tree, True))))
+
+
+def _turns_case_off(pattern: str) -> bool:
+    """True when any group in the parsed pattern removes IGNORECASE, however
+    the flag group is spelled; the same characters inside a literal or a
+    character class do not count."""
+    sre = _sre()
 
     def walk(node: object) -> bool:
         if isinstance(node, tuple) and len(node) == 2 and node[0] is sre.SUBPATTERN:
@@ -539,7 +594,7 @@ def load_entries(raw: str, expect: int) -> list[Entry]:
             continue  # counted below: the canary must appear exactly once
         literal = _regex_literal(line[3:]) if line.startswith("re:") else line
         if literal is None:
-            key = line.casefold()
+            key = "re:" + _regex_key(line[3:])
         else:
             key = " ".join(normalise(literal).casefold().split())
             if key == CANARY:
