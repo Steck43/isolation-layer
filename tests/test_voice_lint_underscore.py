@@ -300,3 +300,60 @@ def test_the_noun_before_a_relative_clause_or_after_a_preposition_passes(
     text: str,
 ) -> None:
     assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+# The lint reads text after NFKC and with invisible characters removed, so a
+# fullwidth or invisible-character spelling of a flagged word is still caught.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(
+            "This ｕｎｄｅｒｓｃｏｒｅｓ the point.",
+            id="fullwidth",
+        ),
+        pytest.param("This under​scores the point.", id="zero-width-space"),
+        pytest.param("This under­scores the point.", id="soft-hyphen"),
+        pytest.param("This under⁠scores the point.", id="word-joiner"),
+        pytest.param("This under͏scores the point.", id="grapheme-joiner"),
+    ],
+)
+def test_an_invisible_or_fullwidth_spelling_of_the_verb_is_caught(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+def test_an_invisible_spelling_of_other_ai_vocabulary_is_caught() -> None:
+    text = "We de​lve into it, and the ｔａｐｅｓｔｒｙ holds."
+    hits = [h for h in voice.scan_text("t", text, fail_on_warn=True) if "AI-VOCAB" in h]
+    assert len(hits) == 2, hits
+
+
+# A "that" that starts a relative clause with its own subject ("underscores that
+# users type") names the character; "that" plus a plain noun ("underscores that
+# point") is still the verb's object.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("We allowed underscores that users type.", id="allowed-users"),
+        pytest.param("Names use underscores that people expect.", id="use-people"),
+        pytest.param("We strip underscores that you add by hand.", id="strip-you"),
+        pytest.param("The first underscore that we found is kept.", id="ordinal-we"),
+    ],
+)
+def test_a_relative_that_with_its_own_subject_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("This underscores that point.", id="this-that-point"),
+        pytest.param("The tests we added underscore that risk.", id="clause-that-risk"),
+        pytest.param("The last underscores that gap clearly.", id="ordinal-that-gap"),
+    ],
+)
+def test_that_plus_a_plain_noun_is_still_the_verbs_object(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
