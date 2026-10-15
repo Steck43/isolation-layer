@@ -216,3 +216,41 @@ def test_a_subject_word_on_the_left_never_exempts_a_verb(text: str) -> None:
 )
 def test_the_noun_after_a_subject_word_passes(text: str) -> None:
     assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+# A determiner and an ordinal, or a verb at the end of a clause, on the left
+# never exempt a verb: an object after the word decides.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("This first underscores the risk.", id="determiner-ordinal"),
+        pytest.param("The tests we added underscore the gap.", id="after-a-clause"),
+        pytest.param("The checks we used underscore this gap.", id="clause-this"),
+        pytest.param("Each last underscores its point.", id="ordinal-possessive"),
+        pytest.param("Underscore the point before you merge.", id="sentence-start"),
+        pytest.param("Underscores the need for review.", id="sentence-start-plural"),
+        pytest.param("It 'underscores' the need.", id="single-quoted-verb"),
+    ],
+)
+def test_a_verb_after_an_ordinal_a_clause_or_at_the_start_is_caught(
+    text: str,
+) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("The first underscore is dropped.", id="ordinal-end"),
+        pytest.param("This first underscore in the key is kept.", id="ordinal-prep"),
+        pytest.param("The first underscore that appears is kept.", id="ordinal-that"),
+        pytest.param("Tests we added use underscores in names.", id="clause-prep"),
+        pytest.param("We added underscores to the keys.", id="added-prep"),
+        pytest.param("Names allowed underscores.", id="verb-end"),
+        pytest.param("The 'underscore' is the separator.", id="single-quoted-noun"),
+    ],
+)
+def test_the_noun_after_an_ordinal_or_a_verb_still_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
