@@ -294,9 +294,13 @@ def _ignorable(ch: str) -> bool:
 
 def normalise(text: str) -> str:
     """NFKC, then drop every default-ignorable code point and format character,
-    then fold Latin look-alikes."""
+    then every combining mark (a letter plus a mark composes into a different
+    letter, so a mark inside a name hid it), then fold Latin look-alikes."""
     text = unicodedata.normalize("NFKC", text)
     text = "".join(ch for ch in text if not _ignorable(ch))
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Mn", "Me"))
+    text = unicodedata.normalize("NFC", text)
     return text.translate(_CONFUSABLES)
 
 
