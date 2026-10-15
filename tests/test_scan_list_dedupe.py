@@ -1,10 +1,12 @@
-"""The private list cannot reach its exact count with padding.
+"""The private list cannot reach its exact count by repeating an entry.
 
 load_entries holds the list to an exact entry count, so a repeated entry, or
 another spelling of one already listed, would let a shorter list pass the
-count. Each entry is compared after normalise().casefold() with runs of
-whitespace collapsed; regex entries are compared by their exact text. Errors
-name entry indexes only, never a term.
+count. Each plain entry, and each regex that is only a literal name, is
+compared after normalise().casefold() with runs of whitespace collapsed; other
+regex entries are compared by their text without case. Errors name entry
+indexes only, never a term. Distinct junk entries still count: that gap is
+not closed here.
 """
 
 from __future__ import annotations
