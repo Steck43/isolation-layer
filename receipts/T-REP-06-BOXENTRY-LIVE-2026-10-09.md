@@ -32,4 +32,4 @@ successful measured run.
 - Hermes invoking `box_entry.run`.
 - Judge apply or `always_invoked`; both remain off/false.
 
-Forseti review is still required before this is called landed.
+An independent review is still required before this is called landed.
