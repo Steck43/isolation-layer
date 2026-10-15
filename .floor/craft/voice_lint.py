@@ -49,7 +49,8 @@ EXIT_FAIL = 2
 #     "double-underscore");
 #   - at the start of a sentence, when what follows is is, are, was, were, a
 #     preposition, the end of the sentence, or the rest of a list of character
-#     names;
+#     names, or, for the plural only, "that" (a plural cannot be an imperative,
+#     so "Underscores that matter" is the noun before a relative clause);
 #   - in a list after another character name ("a dash, underscore or dot")
 #     when what follows ends the list, names another character, or is one of
 #     a few subject verbs (splits, separates, marks, is, are);
@@ -86,11 +87,6 @@ _LEFT_BARE = re.compile(r"\b(?:that|first|last)\s+$", re.I)
 # before and after can end a clause as adverbs ("the run before"), so after
 # them the word is a noun only when no object follows.
 _LEFT_ADVERB = re.compile(r"\b(?:before|after)\s+$", re.I)
-_OBJECT_NEXT = re.compile(
-    r"\s+(?:the|an?|how|why|what|that|this|these|those|its|our|their|his|her|"
-    r"it|them|us|your|my)\b",
-    re.I,
-)
 # An object after the word: a determiner, possessive or object pronoun, "it",
 # or "that" unless a verb follows it (a relative clause: "underscores that
 # were missing" names the character).
@@ -103,7 +99,8 @@ _THAT_AFTER = re.compile(r"\s+that\b", re.I)
 _RELATIVE_THAT = re.compile(
     r"\s+that\s+(?:is|are|was|were|has|have|had|can|could|may|might|must|"
     r"will|would|shall|should|do|does|did|appears?|remains?|stays?|follows?|"
-    r"precedes?|separates?|marks?|joins?|splits?|sits?|comes?|starts?|ends?)\b",
+    r"precedes?|separates?|marks?|joins?|splits?|sits?|comes?|starts?|ends?|"
+    r"matters?|counts?|survives?|exists?|occurs?|repeats?|belongs?)\b",
     re.I,
 )
 
@@ -198,9 +195,9 @@ class _UnderscoreVocab:
         if _LEFT_BARE.search(before):
             return bool(_NOUN_END.match(after))
         if _LEFT_ONE.search(before):
-            return not plural and not _OBJECT_NEXT.match(after)
+            return not plural and not _object_follows(after)
         if _LEFT_MANY.search(before):
-            return plural and not _OBJECT_NEXT.match(after)
+            return plural and not _object_follows(after)
         if _LEFT_STRICT.search(before):
             return True
         if _LEFT_ADVERB.search(before):
@@ -214,6 +211,9 @@ class _UnderscoreVocab:
                 _LIST_NEXT.match(after)
                 or _NOUN_END.match(after)
                 or _SENTENCE_NEXT.match(after)
+                # A plural cannot be an imperative, so "Underscores that ..."
+                # opening a sentence is the noun before a relative clause.
+                or (plural and _THAT_AFTER.match(after))
             )
         return False
 

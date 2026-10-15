@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The voice lint reads a relative clause after the noun in more places: "that" followed by a plain verb such as matter, count, exist or survive starts a relative clause after a count word, after a verb that takes the noun as an object, and after "the"; and a plural opening a sentence before "that" is the noun, since a plural cannot be an imperative. After a subject (it, this, results) the same "that" still marks the verb.
 - Regex entries are keyed for the duplicate check by their parsed pattern, not their text: a group that only groups, a flag group that sets a flag already set, a repeat of exactly once and a one-letter class fold away, and letters compare without case except inside a group that turns case off. So redundant syntax cannot pad the exact count, and two case-guarded entries that differ only by case now count as two (the old text key folded them together).
 - A regex entry skips the casefolded view when any group in the parsed pattern turns IGNORECASE off, however the flag group is spelled (`(?s-i:`, `(?-si:`, `(?x-i:`). The check used to look for the text `(?-i`, so other spellings matched a case they were written to skip, and the same characters inside a character class turned the casefolded view off for nothing.
 - The public surface scan drops spacing combining marks (category Mc, such as U+0903) along with the other combining marks before matching, so one inside a name no longer hides it from a regex or short entry.
