@@ -167,3 +167,52 @@ def test_a_verb_use_in_every_shape_is_ai_vocabulary(text: str) -> None:
 )
 def test_the_character_name_in_its_tight_shapes_passes(text: str) -> None:
     assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+# A word on the left that can start a subject ("this", "that", "these",
+# "first", a quantity, or a verb form that is also a plural noun such as
+# "uses") never exempts the word by itself: agreement and what follows decide.
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Results that underscore the risk.", id="that-relative"),
+        pytest.param("Findings that underscore how weak it is.", id="that-how"),
+        pytest.param("That underscores the gap.", id="that-subject"),
+        pytest.param("We first underscore the need for pins.", id="first-adverb"),
+        pytest.param("We last underscore the point.", id="last-adverb"),
+        pytest.param("This underscores, in short, the risk.", id="this-comma"),
+        pytest.param("These underscore the risk.", id="these-subject"),
+        pytest.param("Those underscore it.", id="those-subject"),
+        pytest.param("Some underscore the cost.", id="some-subject"),
+        pytest.param("Few underscore it.", id="few-subject"),
+        pytest.param("All underscore the need.", id="all-subject"),
+        pytest.param("Each of these underscores the point.", id="each-of-these"),
+        pytest.param("Both uses underscore the risk.", id="uses-noun-subject"),
+        pytest.param("The matches underscore the gap.", id="matches-noun-subject"),
+    ],
+)
+def test_a_subject_word_on_the_left_never_exempts_a_verb(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Underscores are stripped from keys.", id="sentence-start-are"),
+        pytest.param("Underscores in keys are kept.", id="sentence-start-in"),
+        pytest.param(
+            "Python treats underscore-prefixed names as private.", id="compound-after"
+        ),
+        pytest.param("Rename the double-underscore methods.", id="compound-before"),
+        pytest.param("Drop that underscore.", id="that-end"),
+        pytest.param("This underscore is ignored.", id="this-singular"),
+        pytest.param("These underscores in names are kept.", id="these-plural"),
+        pytest.param("Keep the last underscore.", id="the-last"),
+        pytest.param("Split at the first underscore in the key.", id="the-first"),
+        pytest.param("Python uses underscores for private names.", id="uses-object"),
+        pytest.param("Its underscores were dropped.", id="its-plural"),
+        pytest.param("Their underscore was stripped.", id="their-singular"),
+    ],
+)
+def test_the_noun_after_a_subject_word_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
