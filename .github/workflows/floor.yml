@@ -166,13 +166,15 @@ jobs:
             echo "::error::resolve_base.sh missing from roof (install_floor craft pack)"
             exit 1
           fi
-          if [ -f .floor/craft/voice_lint.py ]; then V=.floor/craft/voice_lint.py
-          elif [ -f craft/voice_lint.py ]; then V=craft/voice_lint.py
-          else
-            echo "::error::voice_lint.py missing from roof (install_floor craft pack)"
+          # The lint that judges the change comes from the base, so a change to
+          # the lint cannot judge itself. No fallback to the change's copy.
+          mkdir -p "${RUNNER_TEMP}/voice"
+          if ! git cat-file -e "${BASE}:.floor/craft/voice_lint.py"; then
+            echo "::error::base ${BASE} has no voice lint; refusing to run the pull request copy"
             exit 1
           fi
-          python "$V" --commits --base "$BASE" --head HEAD --prose --fail-on-warn
+          git show "${BASE}:.floor/craft/voice_lint.py" > "${RUNNER_TEMP}/voice/voice_lint.py"
+          python3 -I "${RUNNER_TEMP}/voice/voice_lint.py" --commits --base "$BASE" --head HEAD --prose --fail-on-warn
 
   craft-changelog:
     name: craft (changelog)
