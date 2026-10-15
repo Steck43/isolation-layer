@@ -281,12 +281,52 @@ def _token_hashes(text: str) -> frozenset[str]:
     return frozenset(hashlib.sha256(t.encode()).hexdigest() for t in tokens)
 
 
+def _regex_literal(pattern: str) -> str | None:
+    """The text a pattern matches if it is only a literal (escaped
+    punctuation allowed); None when it uses any regex syntax."""
+    out = []
+    i = 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "\\":
+            nxt = pattern[i + 1 : i + 2]
+            if not nxt or nxt.isalnum() or nxt == "_":
+                return None  # \b, \d, \1 and the like are regex syntax
+            out.append(nxt)
+            i += 2
+            continue
+        if ch in ".^$*+?{}[]|()":
+            return None
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def load_entries(raw: str, expect: int) -> list[Entry]:
     lines = [line.strip() for line in raw.splitlines()]
     lines = [line for line in lines if line and not line.startswith("#")]
     if not lines:
         raise ListError("private list is empty")
     entries = [Entry(i, line) for i, line in enumerate(lines)]
+    # Repeats cannot meet the exact count: an entry that repeats an earlier one
+    # after normalise().casefold() and whitespace folding, a regex that is only
+    # a literal name (keyed as that name), a regex that differs only by case,
+    # or another spelling of the canary, plain or regex, is refused by index.
+    # Distinct entries that name nothing private still count; see CHANGELOG.
+    seen: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        if entries[index].canary:
+            continue  # counted below: the canary must appear exactly once
+        literal = _regex_literal(line[3:]) if line.startswith("re:") else line
+        if literal is None:
+            key = line.casefold()
+        else:
+            key = " ".join(normalise(literal).casefold().split())
+            if key == CANARY:
+                raise ListError(f"entry {index}: is another spelling of the canary")
+        if key in seen:
+            raise ListError(f"entry {index}: duplicates entry {seen[key]}")
+        seen[key] = index
     canaries = [e for e in entries if e.canary]
     if len(canaries) != 1:
         raise ListError(
