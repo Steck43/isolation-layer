@@ -254,3 +254,49 @@ def test_a_verb_after_an_ordinal_a_clause_or_at_the_start_is_caught(
 )
 def test_the_noun_after_an_ordinal_or_a_verb_still_passes(text: str) -> None:
     assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+# "it" or "that" as the object, and a verb after before/after/above/below used
+# as an adverb at the end of a clause.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("This first underscores it.", id="ordinal-it"),
+        pytest.param("The tests we added underscore it.", id="clause-it"),
+        pytest.param(
+            "The tests we added underscore that point.", id="clause-that-noun"
+        ),
+        pytest.param("The last underscores that risk.", id="ordinal-that-noun"),
+        pytest.param("The run before underscores the risk.", id="before-verb"),
+        pytest.param("The check after underscores it.", id="after-verb-it"),
+        pytest.param("The table above underscores the point.", id="above-verb"),
+        pytest.param("The note below underscores that gap.", id="below-verb-that"),
+        pytest.param("Read it before underscoring the point.", id="before-ing"),
+    ],
+)
+def test_an_it_or_that_object_or_an_adverb_on_the_left_is_caught(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(
+            "We added underscores that were missing.", id="verb-that-relative"
+        ),
+        pytest.param(
+            "The first underscore that appears is kept.", id="ordinal-relative"
+        ),
+        pytest.param("We allowed underscores that separate words.", id="that-separate"),
+        pytest.param("Put a dash before underscores in names.", id="before-noun-prep"),
+        pytest.param("The digit after underscore is kept.", id="after-noun-is"),
+        pytest.param("The underscore above is a separator.", id="determiner-above"),
+        pytest.param("Strip spaces before underscores.", id="before-noun-end"),
+    ],
+)
+def test_the_noun_before_a_relative_clause_or_after_a_preposition_passes(
+    text: str,
+) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
