@@ -62,7 +62,8 @@ ALLOWED_IDENTIFIERS = frozenset(
 )
 _IDENT = re.compile(r"[A-Za-z0-9_]+")
 
-# Latin look-alikes from Cyrillic and Greek, folded before matching.
+# Latin look-alikes from Cyrillic, Greek, Armenian and Cherokee, and Latin small
+# capitals, folded before matching.
 _CONFUSABLES = str.maketrans(
     {
         "а": "a",
@@ -97,6 +98,54 @@ _CONFUSABLES = str.maketrans(
         "κ": "k",
         "ν": "v",
         "Ο": "O",
+        # Armenian letters drawn like Latin ones.
+        "օ": "o",
+        "ս": "u",
+        "հ": "h",
+        "ո": "n",
+        "ց": "g",
+        "Օ": "O",
+        "Ս": "U",
+        # Cherokee capitals drawn like Latin capitals.
+        "Ꭰ": "D",
+        "Ꭱ": "R",
+        "Ꭲ": "T",
+        "Ꭹ": "Y",
+        "Ꭺ": "A",
+        "Ꭻ": "J",
+        "Ꭼ": "E",
+        "Ꮃ": "W",
+        "Ꮇ": "M",
+        "Ꮋ": "H",
+        "Ꮓ": "Z",
+        "Ꮪ": "S",
+        "Ꮮ": "L",
+        "Ꮯ": "C",
+        "Ꮲ": "P",
+        # Latin small capitals, which NFKC leaves alone.
+        "ᴀ": "a",
+        "ʙ": "b",
+        "ᴄ": "c",
+        "ᴅ": "d",
+        "ᴇ": "e",
+        "ɢ": "g",
+        "ʜ": "h",
+        "ɪ": "i",
+        "ᴊ": "j",
+        "ᴋ": "k",
+        "ʟ": "l",
+        "ᴍ": "m",
+        "ɴ": "n",
+        "ᴏ": "o",
+        "ᴘ": "p",
+        "ʀ": "r",
+        "ꜱ": "s",
+        "ᴛ": "t",
+        "ᴜ": "u",
+        "ᴠ": "v",
+        "ᴡ": "w",
+        "ʏ": "y",
+        "ᴢ": "z",
     }
 )
 
