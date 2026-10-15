@@ -110,5 +110,5 @@ def test_every_ascii_letter_stays_itself() -> None:
         assert voice._fold(ch) == ch
 
 
-UTS39_PACK_SHA256 = "pending"
-UTS39_PAIRS = 0
+UTS39_PACK_SHA256 = "7b5d717bf5db55da0f32d007cf0a68da9e222e172ae1a5ebd36b46e460ed4b5f"
+UTS39_PAIRS = 1582
