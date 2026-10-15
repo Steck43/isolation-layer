@@ -24,10 +24,14 @@ EXIT_FAIL = 2
 # any use. Only the singular or plural noun passes, and only in these shapes:
 #   - right after a word that cannot start a subject: a determiner or
 #     possessive (the, a, an, no, any, every, its, their), a position or
-#     count adjective (leading, trailing, double, single, lone, literal), a
-#     preposition (on, by, with, in, of, between), the base, past or -ing form
-#     of a verb that takes it as an object (use, allowed, replacing), or
-#     "first" or "last" after a determiner ("the first underscore");
+#     count adjective (leading, trailing, double, single, lone, literal), or
+#     a preposition (on, by, with, in, of, between);
+#   - right after the base, past or -ing form of a verb that takes it as an
+#     object (use, allowed, replacing), or after "first" or "last" following a
+#     determiner ("the first underscore"), only when no object follows: a
+#     determiner, possessive or pronoun object after the word (the, a, this,
+#     its, them) makes it a verb ("we added underscore the gap", "this first
+#     underscores the risk");
 #   - right after a word that can start a subject, only when number agrees
 #     with the noun and no object follows: a singular one (this, each, one)
 #     with "underscore", a plural one (these, those, both, many, some, all, a
@@ -61,9 +65,10 @@ _STRICT = (
     r"the|an?|no|any|every|its|their|our|your|my|double|triple|leading|"
     r"trailing|extra|literal|final|lone|single|escaped|on|by|with|without|in|"
     r"into|from|for|between|than|like|of|about|at|before|after|around|inside|"
-    r"per|via|(?:" + _OBJECT_VERBS + r")(?:e?d|ing)?"
+    r"per|via"
 )
 _LEFT_STRICT = re.compile(r"\b(?:" + _STRICT + r")\s+$", re.I)
+_LEFT_VERB = re.compile(r"\b(?:" + _OBJECT_VERBS + r")(?:e?d|ing)?\s+$", re.I)
 _LEFT_ORDINAL = re.compile(
     r"\b(?:the|its|their|a|each|every|this|that)\s+(?:first|last)\s+$", re.I
 )
@@ -77,6 +82,13 @@ _LEFT_BARE = re.compile(r"\b(?:that|first|last)\s+$", re.I)
 _OBJECT_NEXT = re.compile(
     r"\s+(?:the|an?|how|why|what|that|this|these|those|its|our|their|his|her|"
     r"it|them|us|your|my)\b",
+    re.I,
+)
+# An object after the word: a determiner, possessive or object pronoun. "that"
+# and "it" are left out, so a noun followed by a relative clause still passes.
+_OBJECT_AFTER = re.compile(
+    r"\s+(?:the|an?|how|why|what|this|these|those|its|our|their|his|her|them|"
+    r"us|your|my)\b",
     re.I,
 )
 _NOUN_END = re.compile(
@@ -119,7 +131,8 @@ class _UnderscoreVocab:
     """A pattern stand-in: finditer yields every form of the word except the
     noun in one of the shapes listed above, so every verb use is a hit. A word
     on the left that can start a subject never exempts the word by itself:
-    number agreement and what follows decide."""
+    number agreement and what follows decide. After a verb or a determiner
+    with an ordinal, an object following the word makes it a verb."""
 
     def finditer(self, text: str):
         for m in _UNDERSCORE.finditer(text):
@@ -142,7 +155,7 @@ class _UnderscoreVocab:
         if _GLYPH_OR_AS.match(after):
             return True
         if _LEFT_ORDINAL.search(before):
-            return True
+            return not _OBJECT_AFTER.match(after)
         if _LEFT_BARE.search(before):
             return bool(_NOUN_END.match(after))
         if _LEFT_ONE.search(before):
@@ -151,6 +164,8 @@ class _UnderscoreVocab:
             return plural and not _OBJECT_NEXT.match(after)
         if _LEFT_STRICT.search(before):
             return True
+        if _LEFT_VERB.search(before):
+            return not _OBJECT_AFTER.match(after)
         if _LEFT_LIST.search(before):
             return bool(_LIST_END.match(after))
         if _SENTENCE_START.search(text[: m.start()]):
