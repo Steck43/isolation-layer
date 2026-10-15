@@ -80,3 +80,24 @@ def test_a_combining_mark_inside_a_name_never_hides_it_in_a_path(
 def test_text_that_only_shares_letters_stays_clean() -> None:
     data = "notes on q̇vz and kxj apart\n".encode()
     assert scan.scan_bytes(data, _entries(NAME)) == []
+
+
+# Regex and short entries read the casefolded view as plain entries already do
+# through the separator-free view: a sharp s folds to "ss", which re.IGNORECASE
+# alone does not match.
+
+NAME_SS = "qvz" + "sskxj"
+
+
+@pytest.mark.parametrize("form", FORMS)
+@pytest.mark.parametrize("sharp", ["ß", "ẞ"], ids=["sharp-s", "capital-sharp-s"])
+def test_a_case_fold_spelling_of_a_name_matches_every_entry_form(
+    form: str, sharp: str
+) -> None:
+    # A five-letter short entry keeps the fold inside it and stays below the
+    # separator-free view's minimum length.
+    name = NAME_SS[:5] if form == "short-plain" else NAME_SS
+    entry = name if form == "short-plain" else _entry(form, NAME_SS)
+    folded = name.replace("ss", sharp, 1)
+    data = f"notes on {folded} here\n".encode()
+    assert scan.scan_bytes(data, _entries(entry)) == ["private entry 1"]
