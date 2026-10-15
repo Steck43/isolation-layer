@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With combining marks dropped, a combining-dot or dotted-capital-I spelling of a private entry is a duplicate of it and cannot pad the count, alongside the zero-width and case spellings already refused. Known gap: an entry that differs from another only by a separator (a spaced name and its one-word form) still counts as its own entry; keying duplicates on the separator-free form would refuse the live list, so that call is left to the maintainer.
 - The look-alike fold also covers Armenian letters drawn like Latin ones (small o, u, h, n, g; capital O, U), fifteen Cherokee capitals drawn like Latin capitals, and the Latin small capitals NFKC leaves alone, so a name spelled with one of them is found. Lower-case Cherokee letters are not folded.
 - Every private entry also reads the casefolded text, so a fold that case-insensitive matching alone misses (a sharp s for "ss") no longer hides a name from a regex or short entry. A regex that turns case sensitivity back on with `(?-i` skips that view and stays case-sensitive.
 - The public surface scan drops combining marks (categories Mn and Me) after NFKC and the ignorable strip. NFKC composes a letter and a following mark into a different precomposed letter, so a name with a dot above, an accent, an overlay or an enclosing mark inside hid from regex and short entries (long plain entries already matched through the separator-free view). A dotted capital I matches the plain i entry in every form.

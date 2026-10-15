@@ -109,3 +109,30 @@ def test_a_case_sensitive_regex_entry_stays_case_sensitive() -> None:
     assert scan.scan_bytes(
         f"notes on {NAME.capitalize()} here\n".encode(), _entries(entry)
     ) == ["private entry 1"]
+
+
+# The dedupe key is normalise().casefold() with whitespace folded, so every
+# spelling normalise removes (a zero-width character, a combining mark, a
+# dotted capital I) cannot pad the count. A separator variant ("qvz kxj" beside
+# "qvzkxj") still counts as its own entry; that gap is recorded in CHANGELOG.
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param(NAME[:3] + "​" + NAME[3:], id="zero-width-space"),
+        pytest.param(NAME[:3] + "̇" + NAME[3:], id="combining-dot"),
+        pytest.param(NAME.upper(), id="upper-case"),
+    ],
+)
+def test_a_normalise_variant_of_an_entry_is_a_duplicate(variant: str) -> None:
+    raw = "\n".join([scan.CANARY, NAME, variant, "qvzz" + "kkxj"]) + "\n"
+    with pytest.raises(scan.ListError, match="duplicates entry"):
+        scan.load_entries(raw, 3)
+
+
+def test_a_dotted_capital_i_variant_of_an_entry_is_a_duplicate() -> None:
+    variant = NAME_I.replace("i", "İ")
+    raw = "\n".join([scan.CANARY, NAME_I, variant, "qvzz" + "kkxj"]) + "\n"
+    with pytest.raises(scan.ListError, match="duplicates entry"):
+        scan.load_entries(raw, 3)
