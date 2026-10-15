@@ -38,7 +38,7 @@ from urllib.parse import unquote
 CANARY = "zqxwvk"
 # How many private entries the list must hold. CI runs the base branch copy
 # of this file, so the count is set by the base, not by the change under review.
-EXPECTED_ENTRIES = 13
+EXPECTED_ENTRIES = 36
 MIN_PLAIN = 3
 MIN_COMPACT = 6
 MAX_DEPTH = 2
