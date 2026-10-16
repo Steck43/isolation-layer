@@ -160,12 +160,18 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          if [ -f .floor/craft/resolve_base.sh ]; then . .floor/craft/resolve_base.sh
-          elif [ -f craft/resolve_base.sh ]; then . craft/resolve_base.sh
-          else
-            echo "::error::resolve_base.sh missing from roof (install_floor craft pack)"
+          # The script that picks BASE comes from the base the event names, so a
+          # change to it cannot choose the range it is judged on. No fallback.
+          SRC="$PR_BASE"
+          if [ -z "$SRC" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then SRC="$PUSH_BEFORE"; fi
+          if [ -z "$SRC" ]; then SRC="$(git rev-parse --verify origin/HEAD 2>/dev/null || git rev-parse --verify origin/main)"; fi
+          mkdir -p "${RUNNER_TEMP}/craft"
+          if ! git cat-file -e "${SRC}:.floor/craft/resolve_base.sh"; then
+            echo "::error::base ${SRC} has no resolve_base.sh; refusing to run the pull request copy"
             exit 1
           fi
+          git show "${SRC}:.floor/craft/resolve_base.sh" > "${RUNNER_TEMP}/craft/resolve_base.sh"
+          . "${RUNNER_TEMP}/craft/resolve_base.sh"
           # The lint that judges the change comes from the base, so a change to
           # the lint cannot judge itself. No fallback to the change's copy.
           mkdir -p "${RUNNER_TEMP}/voice"
@@ -195,12 +201,18 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          if [ -f .floor/craft/resolve_base.sh ]; then . .floor/craft/resolve_base.sh
-          elif [ -f craft/resolve_base.sh ]; then . craft/resolve_base.sh
-          else
-            echo "::error::resolve_base.sh missing from roof"
+          # The script that picks BASE comes from the base the event names, so a
+          # change to it cannot choose the range it is judged on. No fallback.
+          SRC="$PR_BASE"
+          if [ -z "$SRC" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then SRC="$PUSH_BEFORE"; fi
+          if [ -z "$SRC" ]; then SRC="$(git rev-parse --verify origin/HEAD 2>/dev/null || git rev-parse --verify origin/main)"; fi
+          mkdir -p "${RUNNER_TEMP}/craft"
+          if ! git cat-file -e "${SRC}:.floor/craft/resolve_base.sh"; then
+            echo "::error::base ${SRC} has no resolve_base.sh; refusing to run the pull request copy"
             exit 1
           fi
+          git show "${SRC}:.floor/craft/resolve_base.sh" > "${RUNNER_TEMP}/craft/resolve_base.sh"
+          . "${RUNNER_TEMP}/craft/resolve_base.sh"
           if [ -f .floor/craft/changelog_gate.py ]; then C=.floor/craft/changelog_gate.py
           elif [ -f craft/changelog_gate.py ]; then C=craft/changelog_gate.py
           else
@@ -228,12 +240,18 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          if [ -f .floor/craft/resolve_base.sh ]; then . .floor/craft/resolve_base.sh
-          elif [ -f craft/resolve_base.sh ]; then . craft/resolve_base.sh
-          else
-            echo "::error::resolve_base.sh missing from roof"
+          # The script that picks BASE comes from the base the event names, so a
+          # change to it cannot choose the range it is judged on. No fallback.
+          SRC="$PR_BASE"
+          if [ -z "$SRC" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then SRC="$PUSH_BEFORE"; fi
+          if [ -z "$SRC" ]; then SRC="$(git rev-parse --verify origin/HEAD 2>/dev/null || git rev-parse --verify origin/main)"; fi
+          mkdir -p "${RUNNER_TEMP}/craft"
+          if ! git cat-file -e "${SRC}:.floor/craft/resolve_base.sh"; then
+            echo "::error::base ${SRC} has no resolve_base.sh; refusing to run the pull request copy"
             exit 1
           fi
+          git show "${SRC}:.floor/craft/resolve_base.sh" > "${RUNNER_TEMP}/craft/resolve_base.sh"
+          . "${RUNNER_TEMP}/craft/resolve_base.sh"
           if [ -f .floor/craft/comment_craft.py ]; then C=.floor/craft/comment_craft.py
           elif [ -f craft/comment_craft.py ]; then C=craft/comment_craft.py
           else

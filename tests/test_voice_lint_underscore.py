@@ -357,3 +357,37 @@ def test_a_relative_that_with_its_own_subject_passes(text: str) -> None:
 )
 def test_that_plus_a_plain_noun_is_still_the_verbs_object(text: str) -> None:
     assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
+
+
+# A relative clause with a plain verb ("underscores that matter") names the
+# character after a count word, after a verb that takes it as an object, and at
+# the start of a sentence; the same "that" after a subject is still the verb.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Underscores that matter stay in the name.", id="sentence-start"),
+        pytest.param("Two underscores that matter are kept.", id="after-count"),
+        pytest.param("We keep underscores that matter most.", id="after-verb"),
+        pytest.param("Keep the underscores that matter.", id="after-the"),
+        pytest.param("Strip the underscores that the parser sees.", id="the-parser"),
+        pytest.param("Underscores that the lexer keeps are counted.", id="start-lexer"),
+    ],
+)
+def test_a_relative_clause_after_the_noun_passes(text: str) -> None:
+    assert _vocab_hits(text) == [], voice.scan_text("t", text, fail_on_warn=True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("It underscores that matter.", id="it-that-matter"),
+        pytest.param("This underscores that the risk is real.", id="this-clause"),
+        pytest.param("Results underscore that the risk is real.", id="plural-clause"),
+        pytest.param("The data underscores that the parser sees nothing.", id="data"),
+        pytest.param("That underscores that the plan works.", id="that-that"),
+    ],
+)
+def test_a_that_clause_after_a_subject_is_still_the_verb(text: str) -> None:
+    assert len(_vocab_hits(text)) == 1, voice.scan_text("t", text, fail_on_warn=True)
