@@ -83,6 +83,7 @@ def test_a_confusable_spelling_of_other_ai_vocabulary_is_caught() -> None:
 def test_the_scan_and_the_voice_lint_carry_the_same_fold() -> None:
     assert scan._UTS39_PACK == voice._UTS39_PACK
     assert scan._LOOKALIKE_EXTRA == voice._LOOKALIKE_EXTRA
+    assert scan._CAPITAL_I == voice._CAPITAL_I
 
 
 def test_the_packed_table_is_pinned() -> None:
@@ -108,7 +109,6 @@ def test_every_ascii_letter_stays_itself() -> None:
     for ch in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
         assert scan.normalise(ch) == ch
         assert voice._fold(ch) == ch
-
 
 
 # Capital-I look-alikes. Unicode's table folds each to lowercase l (its skeleton
@@ -158,6 +158,7 @@ def test_ascii_digits_and_the_bar_are_never_folded() -> None:
     for ch in "01|":
         assert scan.normalise(ch) == ch
         assert voice._fold(ch) == ch
+
 
 UTS39_PACK_SHA256 = "7b5d717bf5db55da0f32d007cf0a68da9e222e172ae1a5ebd36b46e460ed4b5f"
 UTS39_PAIRS = 1582

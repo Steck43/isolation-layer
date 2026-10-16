@@ -655,11 +655,21 @@ _LOOKALIKE_EXTRA = (
     "24F:y 262:g 274:n 280:r 299:b 29C:h 29F:l 3B5:e 3BA:k 432:b 43A:k 43C:m "
     "43D:h 442:t 1D00:a 1D05:d 1D07:e 1D0A:j 1D0B:k 1D0D:m 1D18:p 1D1B:t A730:f"
 )
+# Capital-I look-alikes, by hand on top of the Unicode table. Its skeleton for
+# ASCII I is lowercase l, so it folds each of these to l, and a name with an i
+# written with one still hid. Each folds to I, the ASCII capital it imitates.
+# ASCII itself is never folded, so 0, 1 and | stay as written.
+_CAPITAL_I = (
+    "196:I 1C0:I 399:I 406:I 4C0:I 16C1:I 2C92:I A4F2:I A7AE:I A7FE:I 10309:I 10926:I"
+)
 _CONFUSABLES = str.maketrans(
     {
         chr(int(code, 16)): letter
         for code, letter in (
-            pair.split(":") for pair in (_UTS39_PACK + " " + _LOOKALIKE_EXTRA).split()
+            pair.split(":")
+            for pair in (
+                _UTS39_PACK + " " + _LOOKALIKE_EXTRA + " " + _CAPITAL_I
+            ).split()
         )
     }
 )
