@@ -110,5 +110,54 @@ def test_every_ascii_letter_stays_itself() -> None:
         assert voice._fold(ch) == ch
 
 
+
+# Capital-I look-alikes. Unicode's table folds each to lowercase l (its skeleton
+# for ASCII I is l too), so a name with an i written with one of them still read
+# as an l. Each folds to I instead, the same as the ASCII capital it imitates;
+# the ones NFKC turns into ASCII I or Greek capital iota are listed too.
+CAPITAL_I = {
+    0x0196: "Latin capital iota",
+    0x01C0: "Latin dental click",
+    0x0399: "Greek capital iota",
+    0x0406: "Cyrillic Byelorussian-Ukrainian I",
+    0x04C0: "Cyrillic palochka",
+    0x16C1: "Runic isaz",
+    0x2110: "script capital I",
+    0x2111: "black-letter capital I",
+    0x2160: "Roman numeral one",
+    0x2C92: "Coptic iauda",
+    0xA4F2: "Lisu I",
+    0xA7AE: "Latin small capital I",
+    0xA7FE: "Latin epigraphic I longa",
+    0x10309: "Old Italic I",
+    0x10926: "Lydian I",
+    0x1D6B0: "mathematical bold capital iota",
+}
+CAPITAL_I_CASES = [pytest.param(chr(c), id=f"U+{c:04X}") for c in CAPITAL_I]
+
+
+@pytest.mark.parametrize("ch", CAPITAL_I_CASES)
+def test_a_capital_i_look_alike_folds_to_i_in_the_scan(ch: str) -> None:
+    assert scan.normalise(ch) == "I"
+
+
+@pytest.mark.parametrize("ch", CAPITAL_I_CASES)
+def test_a_capital_i_look_alike_folds_to_i_in_the_voice_lint(ch: str) -> None:
+    assert voice._fold(ch) == "I"
+
+
+@pytest.mark.parametrize("form", ["plain", "regex"])
+@pytest.mark.parametrize("ch", CAPITAL_I_CASES)
+def test_a_capital_i_look_alike_never_hides_an_i_in_a_name(ch: str, form: str) -> None:
+    entry = "qvizkxj" if form == "plain" else "re:\\bqvizkxj\\b"
+    data = f"notes on qv{ch}zkxj here\n".encode()
+    assert scan.scan_bytes(data, _entries(entry)) == ["private entry 1"]
+
+
+def test_ascii_digits_and_the_bar_are_never_folded() -> None:
+    for ch in "01|":
+        assert scan.normalise(ch) == ch
+        assert voice._fold(ch) == ch
+
 UTS39_PACK_SHA256 = "7b5d717bf5db55da0f32d007cf0a68da9e222e172ae1a5ebd36b46e460ed4b5f"
 UTS39_PAIRS = 1582
