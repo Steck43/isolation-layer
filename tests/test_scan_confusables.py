@@ -42,8 +42,22 @@ CASES = {
     "ı": "i",  # dotless i
     "ι": "i",  # Greek iota
     "е": "e",  # Cyrillic ie
+    "ɽ": "r",  # r with tail
+    "ɾ": "r",  # r with fishhook
+    "ǝ": "e",  # turned e
+    "є": "e",  # Cyrillic Ukrainian ie
+    "ƚ": "l",  # l with bar
+    "ɨ": "i",  # i with stroke
+    "ᴉ": "i",  # turned i
 }
 PAIRS = [pytest.param(ch, latin, id=f"U+{ord(ch):04X}") for ch, latin in CASES.items()]
+
+
+@pytest.mark.parametrize(("ch", "latin"), PAIRS)
+def test_a_confusable_letter_folds_the_same_in_the_voice_lint(
+    ch: str, latin: str
+) -> None:
+    assert voice._fold(ch).casefold() == scan.normalise(ch).casefold() == latin
 
 
 def _entries(entry: str) -> list[scan.Entry]:
