@@ -649,11 +649,12 @@ _UTS39_PACK = (
     "1FBF8:8 1FBF9:9"
 )
 # Look-alikes the Unicode table leaves out, because their skeleton is not a
-# single ASCII letter: Latin small capitals and a few Cyrillic and Greek
-# letters.
+# single ASCII letter: Latin small capitals, a few Cyrillic and Greek letters,
+# and Latin letters drawn like a plain one with a tail, a bar or a turn.
 _LOOKALIKE_EXTRA = (
     "24F:y 262:g 274:n 280:r 299:b 29C:h 29F:l 3B5:e 3BA:k 432:b 43A:k 43C:m "
-    "43D:h 442:t 1D00:a 1D05:d 1D07:e 1D0A:j 1D0B:k 1D0D:m 1D18:p 1D1B:t A730:f"
+    "43D:h 442:t 1D00:a 1D05:d 1D07:e 1D0A:j 1D0B:k 1D0D:m 1D18:p 1D1B:t A730:f "
+    "27D:r 27E:r 1DD:e 454:e 19A:l 268:i 1D09:i"
 )
 # Capital-I look-alikes, by hand on top of the Unicode table. Its skeleton for
 # ASCII I is lowercase l, so it folds each of these to l, and a name with an i
