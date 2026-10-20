@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `crates/inspector/src/verdict.rs` and `crates/isolation-manager/src/main.rs` are stored with LF line endings. Two comments in `verdict.rs` no longer use an em dash as a sentence break.
+- `crates/inspector/src/verdict.rs` and `crates/isolation-manager/src/main.rs` are stored with LF line endings. Two comments in `verdict.rs` no longer use an em dash as a sentence break. The index bytes are LF.
 - The voice, changelog and comment jobs source `resolve_base.sh` from the base the event names (the pull request base, the push's previous commit, else origin's default branch), copied into the runner's temp dir, and fail closed when that commit has none, so a change to the script cannot choose the range it is judged on. The changelog and comment gates themselves still run from the change's copy.
 - The voice lint reads a relative clause after the noun in more places: "that" followed by a plain verb such as matter, count, exist or survive starts a relative clause after a count word, after a verb that takes the noun as an object, and after "the"; and a plural opening a sentence before "that" is the noun, since a plural cannot be an imperative. After a subject (it, this, results) the same "that" still marks the verb.
 - Regex entries are keyed for the duplicate check by their parsed pattern, not their text: a group that only groups, a flag group that sets a flag already set, a repeat of exactly once and a one-letter class fold away, and letters compare without case except inside a group that turns case off. So redundant syntax cannot pad the exact count, and two case-guarded entries that differ only by case now count as two (the old text key folded them together).
