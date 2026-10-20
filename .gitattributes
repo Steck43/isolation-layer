@@ -20,3 +20,5 @@
 # newwave publish receipts under evidence/ too.
 evidence/**/*.json -text
 receipts/raw/** -text
+.floor/** linguist-vendored
+.githooks/** linguist-vendored

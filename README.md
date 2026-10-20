@@ -10,21 +10,9 @@ Containment is the cost of surgical denial, not the goal. This ordering is desig
 
 ## Four-plane path
 
-This roof is the box. The figure's source of truth is the SVG. Mermaid here is the sketch. GitHub mermaid still concatenates labels. `always_invoked` stays false.
+This roof is the box. The floor is [capability-gate](https://github.com/Steck43/capability-gate). The atom plane and the judge are [aegis-atoms](https://github.com/Steck43/aegis-atoms). The labs that show which classes still fire are [owasp-dual-top10-lab](https://github.com/Steck43/owasp-dual-top10-lab) and [newwave-owasp-security-lab](https://github.com/Steck43/newwave-owasp-security-lab). `always_invoked` stays false.
 
-```mermaid
-flowchart TD
-  CALL["Proposed tool call<br/>identity is the argument, not a fifth plane"] --> FLOOR["Floor: allowlist + atoms"]
-  FLOOR -->|"clean"| ENFORCE["Enforce on author Hermes profile"]
-  FLOOR -->|"rollup cannot settle"| BOX["Box: isolation-layer"]
-  BOX -->|"still contradicts"| JUDGE["Judge: subtract only"]
-  BOX -->|"absorbed"| ENFORCE
-  JUDGE -->|"concur / flag / tighten"| ENFORCE
-  JUDGE -.->|"cannot widen or approve"| ENFORCE
-  JUDGE -->|"low confidence"| HUMAN["Human"]
-  ENFORCE --> OUT["allow / deny / human"]
-  ENFORCE --> AUDIT["Audit: hash-chained, append-only"]
-```
+![Isolation path from the host listener to the dropbox](docs/diagrams/isolation-layer-path.svg)
 
 ![Figure 1. Box between floor and judge](assets/fig1-box-between.svg)
 
@@ -40,7 +28,9 @@ A Firecracker microVM removes the shared domain rather than hardening it. The bo
 
 The jailer sits underneath as a backstop, wrapping the Firecracker process itself in cgroups, namespaces, seccomp, and a chroot and dropping privileges before the guest runs. Two boundaries: the VM is primary, the jailer catches a hypothetical VMM-barrier compromise in a jailed host process rather than as root on the host.
 
-The alternatives were considered and rejected on the record, not overlooked. Plain containers share the host kernel, which is the same weakness the escape class exploits. bubblewrap with Landlock and seccomp is the exact configuration that was escaped. gVisor is strong and needs no hardware virtualization, but its boundary is a user-space kernel processing guest syscalls, a wider surface than KVM plus five devices; it is named as the fallback, not the primary. WebAssembly is the wrong shape for code that needs a real filesystem and subprocesses.
+The alternatives were considered and rejected on the record, not overlooked. Plain containers share the host kernel, which is the same weakness the escape class exploits. Docker is runtime, packaging and test infrastructure, never the isolation boundary. This repo has no Dockerfile. bubblewrap with Landlock and seccomp is the exact configuration that was escaped. gVisor is strong and needs no hardware virtualization, but its boundary is a user-space kernel processing guest syscalls, a wider surface than KVM plus five devices; it is the named fallback, not a shipped runtime (`git grep` finds it in docs, not in `crates/`). WebAssembly is the wrong shape for code that needs a real filesystem and subprocesses.
+
+ASI05 Unexpected Code Execution is the class this contains: one microVM per task under the jailer, seccomp default KILL, Landlock on the host listener. That control is built and tested, and untested live on the full path, because the box is not invoked on every permitted call. ASI07 is not mapped.
 
 ## Claim tense
 
@@ -72,6 +62,17 @@ Rust workspace, six crates:
 
 `VISION` — next: always-invoked enforcement, a full filesystem manifest, a dedicated vestibule uid, and richer analyzers.
 
+## Controls and status
+
+| Control | Status | Proof |
+|---|---|---|
+| One Firecracker microVM per task under the jailer | built and tested | `crates/jailer-launch/src/jailer_cmd.rs:5` `jailer_argv`; CI job `rust (cargo test)` |
+| seccomp default KILL and the PROT_EXEC filter on the host listener | built and tested | `crates/vestibule/src/harden.rs:532` `SECCOMP_RET_KILL_PROCESS`; `harden.rs:445` `PROT_EXEC` |
+| Landlock ABI 1 path-beneath allowlist on the host listener | built and tested | `crates/vestibule/src/harden.rs:157` `install_landlock` |
+| Handoff on the one rollup status | built and tested | the dry handoff script under `scripts/`; it does not boot unless `--launch` |
+| Public-surface scanner | enforced in CI | job `public surface (scanner from base)` |
+| Recorded cold start | built and tested | `docs/b1-record.md` lines 110 to 118: 958.6 ms jailed, 1700.8 ms direct, nested Hyper-V. Not rerun this sitting |
+
 ## Substrate, stated honestly
 
 The primary substrate is a **dedicated Linux VM**, with Firecracker as an L1 guest.
@@ -95,6 +96,44 @@ Active research build. Interfaces are not stable. This is a working isolation la
 
 Default-branch docs do not stamp tip SHAs. Those hashes were local-session locators and go stale after a history rewrite.
 
+## How to run
+
+From a Linux shell, because the vestibule crate uses seccomp and Landlock:
+
+```
+cargo test --workspace
+python3 -m pytest -q
+```
+
+The dry handoff script under `scripts/` prints its ok line and does not boot. `--launch` is the live path.
+
+## Tests and proof
+
+Commands run on this head are recorded in the pull request body after they finish. CI job names on the default branch: `secrets (gitleaks)`, `authorship (no AI trailers)`, `tests`, `rust (cargo test)`, `lint (ruff)`, `craft (voice)`, `craft (changelog)`, `craft (comments)`, `workflow (zizmor + actionlint)`, `public surface (scanner from base)`.
+
+The Python suite baseline on `1a59a9a` was 1,830 passed and 5 skipped on Linux. This sitting reruns it and names the machine in the pull request. Cargo was not part of that baseline.
+
+## Known limits
+
+- `always_invoked` is false. The box is not on the path of every permitted call. That full path is untested live.
+- The same-user story is not this repo's log. The cold-start figure is the nested measurement above, not a bare-metal 125 ms.
+- The handoff script is dry unless `--launch`. It accepts one rollup status.
+- `LICENSE` is MIT. `Cargo.toml` declares Apache-2.0. The split is named.
+- gVisor is a named fallback. There is no `runsc` in this repo.
+- Mutation counts are not stated. That claim is retired.
+
+## Related work
+
+- Stecker, L. (2026). capability-gate. Zenodo. https://doi.org/10.5281/zenodo.22018052. Sibling layer. The prove receipt binds a gate digest and an atoms digest to one call id. Borrows the concept record. Differs: this tree is the box, and it is not invoked on every permitted call.
+- Agache et al. (2020). Firecracker. NSDI. https://www.usenix.org/conference/nsdi20/presentation/agache. Borrows the KVM microVM and the small device set. Differs: nested L1 guest, and the measured cold start is 958.6 ms jailed.
+- Firecracker jailer. https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md. Borrows the jailer as the second boundary. `jailer_argv` wraps it.
+- Linux seccomp BPF. https://docs.kernel.org/userspace-api/seccomp_filter.html. Borrows a default-KILL allowlist and the PROT_EXEC filter on the host listener.
+- Linux Landlock. https://docs.kernel.org/userspace-api/landlock.html. Borrows an ABI 1 path-beneath allowlist on the host listener, not in the guest.
+- gVisor. https://gvisor.dev/docs/. Differs. Named fallback. The boundary here is KVM plus a guest kernel, not a user-space kernel.
+- Kata Containers architecture. https://github.com/kata-containers/kata-containers/blob/main/docs/design/architecture/README.md. Differs. This repo drives Firecracker directly and does not inherit cloud orchestration.
+
 ## License
 
 `LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `Apache-2.0`. That split is named, not silently flipped.
+
+Landen Stecker, agentic AI engineer and architect with security built in.
