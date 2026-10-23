@@ -22,6 +22,6 @@ scratch folder under the temp dir and removes it.
 STUBBED rows have `real: false` in `out/summary.json`, which also carries the
 BLOCKER for a real boot and the list of scenarios this repo cannot run yet.
 
-Known gaps, measured and not asserted (a proposal is filed with the P0 demo results): a
+Known gaps, measured and not asserted: a
 chain cut cleanly after a full row still verifies, and `append` does not verify
 the chain before it appends.
