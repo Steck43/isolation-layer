@@ -1,0 +1,34 @@
+{
+  "name": "SB1-sandbox-lifecycle",
+  "control": "sandbox lifecycle: launch, vestibule, shelf, inspect, disposition, teardown, residue probe (stub VM)",
+  "runner": "lifecycle",
+  "seed": 1401,
+  "real": false,
+  "note": "P0.4 flow. Fresh jail id per task. The VM is a stub host (fake pids, real scratch jail folders). Vestibule, shelf, stage, verdict validate, decide_disposition, decision chain and assert_host_vmm_hygiene are the real crates. hash_lie: the guest claims clear for bytes other than the staged ones. leak_probe: the stub leaves its jail folder and pid behind, and the hygiene check must catch it.",
+  "traffic": {
+    "clear": 6,
+    "suspect": 3,
+    "failed": 2,
+    "hash_lie": 1,
+    "malformed": 1,
+    "leak_probe": 1
+  },
+  "expect": {
+    "tasks": "events",
+    "unique_jail_ids": "events",
+    "launched": "events",
+    "torn_down": "events",
+    "vestibule_rejected": "malformed",
+    "reject_log_lines": "malformed",
+    "claims_valid": "events-malformed",
+    "advance": "clear+leak_probe",
+    "hold": "suspect",
+    "drop": "failed+hash_lie",
+    "hash_lie_dropped": "hash_lie",
+    "stages_disposed": "events-malformed",
+    "hygiene_clean": "events-leak_probe",
+    "leak_detected": "leak_probe",
+    "chain_rows": "3*events",
+    "chain_ok": 1
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "S07-vestibule-schema-violation",
+  "control": "vestibule schema (host listener, stub guest)",
+  "runner": "vestibule",
+  "seed": 1307,
+  "real": false,
+  "note": "Frames go over a real unix socket to vestibule::serve_one_with_opts in Enforce mode with a reject log. A host thread plays the guest; no VM boots. injection_text is schema-valid data whose text reads like an instruction: the vestibule checks shape, not meaning, so it reaches the shelf as inert bytes for the inspector to judge.",
+  "traffic": {
+    "good": 40,
+    "injection_text": 3,
+    "plants": {
+      "extra_field": 2,
+      "wrong_type": 2,
+      "oversize_body": 1,
+      "action_kind": 2,
+      "traversal_filename": 2,
+      "bad_task_id": 1,
+      "bad_version": 1,
+      "deep_nesting": 1,
+      "frame_overrun": 1
+    }
+  },
+  "expect": {
+    "frames": "events",
+    "rejected": "plants",
+    "reject_log_lines": "plants",
+    "accepted": "good+injection_text",
+    "acks": "good+injection_text",
+    "shelf_objects": "good+injection_text",
+    "planted_on_shelf": 0,
+    "injection_text_on_shelf": "injection_text"
+  }
+}

@@ -21,3 +21,7 @@ squashfs-root/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# demo output (make demo-all) and the demo crate build
+/out/
+/demos/sandbox-demo/target/
