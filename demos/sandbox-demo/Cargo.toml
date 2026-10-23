@@ -1,0 +1,17 @@
+[package]
+name = "sandbox-demo"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Seeded synthetic demos over the real vestibule, dropbox, inspector and decision chain crates"
+
+# A workspace of its own, so the root workspace and its Cargo.toml stay as they are.
+[workspace]
+
+[dependencies]
+vestibule = { path = "../../crates/vestibule" }
+dropbox = { path = "../../crates/dropbox" }
+inspector = { path = "../../crates/inspector" }
+aegis-common = { path = "../../crates/aegis-common" }
+serde_json = "1"
