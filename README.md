@@ -1,100 +1,113 @@
 # isolation-layer
 
-An execution-isolation box for runtime agents. Each live, full-capability execution runs as an **ephemeral Firecracker microVM, one per task, launched under the jailer, destroyed on completion.**
+[![floor](https://github.com/Steck43/isolation-layer/actions/workflows/floor.yml/badge.svg)](https://github.com/Steck43/isolation-layer/actions/workflows/floor.yml)
 
-The four planes take identity as an argument. The floor decides. The box sits between floor and judge. The judge subtracts. The audit attests. This tree is the box: it runs when the floor cannot settle the call, not everything the floor permits.
+A host-side isolation layer for agent tool calls: one Firecracker microVM per
+task, launched under the jailer and torn down when the task ends, with a
+schema-checked listener for what comes back from the guest, an inert
+content-addressed shelf for the bytes it hands back, and a hash-chained host
+log of every launch, verdict and teardown. It is designed as the step after
+[capability-gate](https://github.com/Steck43/capability-gate), for a call the
+gate cannot settle. That handoff is not wired yet: the gate's decide path does
+not call this layer today.
 
-A tool call meets capability-gate first. A contradiction the atom-plane rollup cannot settle is the handoff to this tree: run it somewhere disposable, kill it if it is malicious. The three-object model that produces that contradiction lives on [aegis-atoms](https://github.com/Steck43/aegis-atoms). The box absorbs it before a judge call is paid for; only what still contradicts reaches the judge, which may concur, flag, tighten or escalate, and may never widen or approve. Whatever none of them settles binds to a human.
+## What it is
 
-Containment is the cost of surgical denial, not the goal. This ordering is design intent, not a forced path: today a tool call meets the allowlist and runs, and `always_invoked_claim` stays false until a named prove says otherwise.
+A Rust workspace under `crates/`:
 
-## Four-plane path
-
-This roof is the box. The figure's source of truth is the SVG. Mermaid here is the sketch. GitHub mermaid still concatenates labels. `always_invoked` stays false.
-
-```mermaid
-flowchart TD
-  CALL["Proposed tool call<br/>identity is the argument, not a fifth plane"] --> FLOOR["Floor: allowlist + atoms"]
-  FLOOR -->|"clean"| ENFORCE["Enforce on author Hermes profile"]
-  FLOOR -->|"rollup cannot settle"| BOX["Box: isolation-layer"]
-  BOX -->|"still contradicts"| JUDGE["Judge: subtract only"]
-  BOX -->|"absorbed"| ENFORCE
-  JUDGE -->|"concur / flag / tighten"| ENFORCE
-  JUDGE -.->|"cannot widen or approve"| ENFORCE
-  JUDGE -->|"low confidence"| HUMAN["Human"]
-  ENFORCE --> OUT["allow / deny / human"]
-  ENFORCE --> AUDIT["Audit: hash-chained, append-only"]
-```
-
-![Figure 1. Box between floor and judge](assets/fig1-box-between.svg)
-
-Author: [Landen Stecker](https://github.com/Steck43)
-
-## Why a microVM and not a sandbox
-
-The design is chosen against one threat: **an agent that disables its own fence.**
-
-Leonardo Di Donato documented this class for Ona in February and March 2026: a coding agent escaped a bubblewrap sandbox by using `/proc/self/root` as a denylist synonym for a blocked path, then tried to disable bubblewrap once caught ([How Claude Code Escapes its Own Denylist and Sandbox](https://ona.com/stories/how-claude-code-escapes-its-own-denylist-and-sandbox)). The failure was structural, not a missing rule. The fence and the fenced shared a trust domain, and a denylist that enumerates badness loses to an opponent that routes around it.
-
-A Firecracker microVM removes the shared domain rather than hardening it. The boundary is enforced by KVM in the host kernel and by a separate guest kernel. It is not an object inside the guest: no namespace to unshare, no LSM policy to disable, no fence process in the guest's PID table to kill. Firecracker exposes five emulated devices: virtio-net, virtio-block, virtio-vsock, serial console, and a minimal keyboard controller. Everything not implemented is attack surface that does not exist.
-
-The jailer sits underneath as a backstop, wrapping the Firecracker process itself in cgroups, namespaces, seccomp, and a chroot and dropping privileges before the guest runs. Two boundaries: the VM is primary, the jailer catches a hypothetical VMM-barrier compromise in a jailed host process rather than as root on the host.
-
-The alternatives were considered and rejected on the record, not overlooked. Plain containers share the host kernel, which is the same weakness the escape class exploits. bubblewrap with Landlock and seccomp is the exact configuration that was escaped. gVisor is strong and needs no hardware virtualization, but its boundary is a user-space kernel processing guest syscalls, a wider surface than KVM plus five devices; it is named as the fallback, not the primary. WebAssembly is the wrong shape for code that needs a real filesystem and subprocesses.
-
-## Claim tense
-
-Every claim in this repository carries its evidence rung. The distinction is load-bearing and is enforced in the docs.
-
-| Tag | Meaning |
+| Crate | What the code does |
 |---|---|
-| `RECORD` | Off-the-shelf and proven today. Shipped code, a real primitive, or a verified source is named. |
-| `VISION` | A target or design intent. Not yet standing. |
-| `SOURCE:` | The primary source named *before* the claim that rests on it. |
-| `ASSUMPTION (verify):` | An input taken on faith, with the exact check to run. |
+| `isolation-manager` | CLI. `prove` launches and tears down one jailed box and checks boot, vsock and that the host is untouched; `handoff`, `inspect-stage` and `inspect-vm` move a result through the shelf into a disposable inspector; `read` serves an allowlisted host-path read with a sha256; `serve` is a long-lived unix socket listener. |
+| `jailer-launch` | Validates a launch request and runs the Firecracker jailer with dropped privileges. |
+| `vestibule` | Host listener for guest results over vsock or a unix socket. Frames are size-bounded and schema-checked, rejects are logged, and the listener hardens itself after bind: no-new-privs, not dumpable, no core files, a seccomp allowlist that kills by default, a filter that denies `PROT_EXEC` mappings, its own cgroup memory and pid limits, and a Landlock path allowlist. |
+| `dropbox` | Inert shelf: bytes go in and come out by sha256. The shelf has no verbs, and the guest never sees its path. |
+| `inspector` | Stages a shelf object into a throwaway folder, checks the claim against the bytes, gives a verdict (advance, hold or drop) and disposes of the stage. |
+| `aegis-common` | Shared paths, launch validation, the Firecracker API client, host snapshots, and `DecisionChain`: JSONL rows appended with `prev` and `sha256`, written by the host and locked against concurrent writers. |
 
-Building a thing and watching it work does not promote a claim by itself. A boundary probe with a named negative control does.
+Scripts for live runs on a KVM host are in `scripts/` and `deploy/`; the
+operator install is in [deploy/INSTALL.md](deploy/INSTALL.md).
 
-## What is shipped
+## How to run it
 
-Rust workspace, six crates:
+From a fresh clone, with a Rust toolchain:
 
-| Crate | Role |
-|---|---|
-| `isolation-manager` | Launch, prove (receipt bound to call id plus gate and atoms digests), inspect, and allowlisted host-path read (observe; `always_invoked_claim` stays false). Host entry `scripts/box_entry.py` emits the CI receipt contract by default; with `BOX_LIVE_PROVE=1` it boots the same prove path under the caller `tool_call_id`. |
-| `jailer-launch` | Jailer invocation and privilege drop. |
-| `vestibule` | Seccomp allowlist, **default KILL**. Landlock filesystem allowlist. |
-| `inspector` | Post-run verdict and host-disposition checks. |
-| `dropbox` | Bounded artifact hand-back across the boundary. |
-| `aegis-common` | Shared paths, validation, host snapshot. |
+    make demo-all
 
-`RECORD` — currently green: Landlock filesystem allowlist, seccomp allowlist defaulting to KILL, cgroup memory and pid limits on the listener, a `PROT_EXEC` argument filter, and vsock as the control plane. The prove run reports `landlock=true`, `cgroup_jail=true`.
+That builds `demos/sandbox-demo`, runs every scenario in `demos/scenarios/`
+through the real `vestibule`, `dropbox`, `inspector` and `aegis-common`
+crates, prints a summary table and writes `out/summary.json` plus one record
+per scenario in `out/runs/`. It exits non-zero if any row is FAIL. All traffic
+is synthetic and generated from the seed in each scenario file. The
+scenarios touch no network (the initial build fetches crates from crates.io),
+nothing needs sudo, and no VM boots.
 
-`VISION` — next: always-invoked enforcement, a full filesystem manifest, a dedicated vestibule uid, and richer analyzers.
+    make demo-test
 
-## Substrate, stated honestly
+runs the same scenarios as cargo tests, at a changed seed, twice for
+determinism, and once per control with the control removed so the row goes
+red. See [demos/README.md](demos/README.md).
 
-The primary substrate is a **dedicated Linux VM**, with Firecracker as an L1 guest.
+The full test suites:
 
-That is not the original design. A preflight found the Microsoft WSL2 kernel ships without `CONFIG_VHOST_VSOCK`, which blocks the vsock control plane on the WSL2-direct path and is not fixable by loading a module. Promoting a dedicated VM resolved it and shrank the trusted computing base at the same time, since Firecracker stops being a nested L2 guest.
+    cargo test --workspace
+    PYTHONPATH=. python3 -m pytest -q
 
-Two things this repository will not claim:
+CI runs `make demo-all` on every push and pull request, then
+`scripts/readme_proof.py check`, which fails if any number in the Proof section
+below differs from the `out/summary.json` that run just wrote.
 
-- **Not "125 ms."** That is Firecracker's bare-metal reference figure and it is not this host's number. Measured here, cold, no snapshot, Firecracker as an L1 guest under nested Hyper-V: time to guest userspace **958.6 ms jailed** and **1700.8 ms direct** (`docs/b1-record.md` section 5, RECORD). Snapshot-restore is not measured and stays VISION, so no warm-start figure is quoted either.
-- **Not "maximum isolation."** Under nesting the effective trust base includes the hypervisor's nested-KVM path. There is no cheap local proof that nested KVM preserves guest isolation equivalent to single-level KVM, so it is carried as trusted-but-unproven rather than asserted.
+## Proof
 
-## Boundary suite
+Generated by `python3 scripts/readme_proof.py write` from `out/summary.json`
+after `make demo-all`. Each row and each count line names its scenario and
+seed; rerun `make demo-all` to get the same numbers. REAL means the row uses
+the real crates end to end. STUBBED means a stub VM host stands in for the
+Firecracker guest: S07 has a host thread play the guest over a real unix
+socket, and SB1 runs the lifecycle against a stub VM.
 
-The probe suite is **fail-first**: every probe has a named negative control, and a probe that cannot be made to fail on purpose does not count as passing. Host-to-VM is treated as untrusted-input surface and carries its own probe class, because introducing the VM introduced that boundary.
+<!-- proof:start -->
+| scenario | seed | result | REAL/STUBBED |
+|---|---|---|---|
+| S07-vestibule-schema-violation | 1307 | PASS | STUBBED |
+| S08-iso-decision-chain-tamper | 1408 | PASS | REAL |
+| SB1-sandbox-lifecycle | 1401 | PASS | STUBBED |
 
-Step 10 (`scripts/step10_live_harness.py`) joins a real capability-gate decision and a real atoms evaluate into the prove bind args on one call id. Unit tests recompute those digests without booting. Live jailer prove on the box is gated on `BOX_LIVE_PROVE=1`. Step 10b re-ran that prove on a clean `main` tip checkout (receipt `receipts/STEP-10b-2026-10-09.md`). `scripts/box_entry.py` remains the CI receipt contract and does not boot the jailer. `always_invoked` stays false.
+Counts from the same run (`actual` in out/summary.json):
 
-## Status
+- S07-vestibule-schema-violation, seed 1307: events=56, accepted=43, acks=43, frames=56, injection_text_on_shelf=3, planted_on_shelf=0, reject_log_lines=13, rejected=13, shelf_objects=43
+- S08-iso-decision-chain-tamper, seed 1408: events=20, baseline_verified=4, delete_detected=1, delete_index_matches=1, edit_detected=1, edit_index_matches=1, rows_per_chain=20, torn_tail_append_refused=1, torn_tail_detected=1, torn_tail_log_unchanged=1
+- SB1-sandbox-lifecycle, seed 1401: events=14, advance=7, chain_ok=1, chain_rows=42, claims_valid=13, drop=3, hash_lie_dropped=1, hold=3, hygiene_clean=13, launched=14, leak_detected=1, reject_log_lines=1, stages_disposed=13, tasks=14, torn_down=14, unique_jail_ids=14, vestibule_rejected=1
+<!-- proof:end -->
 
-Active research build. Interfaces are not stable. This is a working isolation layer for one to two local agents, not a multi-tenant control plane, and it deliberately does not inherit the cloud orchestration of the projects whose lifecycle and vsock patterns it studied.
+## Not shown yet
 
-Default-branch docs do not stamp tip SHAs. Those hashes were local-session locators and go stale after a history rewrite.
+These are listed in `not_supported` and `blockers` in `out/summary.json` and
+are not claimed here:
+
+- A real microVM boot. S07 and SB1 run on a stub VM host. On the dev host,
+  Firecracker hits a host kernel bug at vCPU creation under nested
+  virtualization. A real boot needs a host where KVM vCPU creation works,
+  `/dev/kvm` access set up by the operator, the golden kernel and rootfs, and
+  `jailer-launch` installed.
+- The handoff from capability-gate into this layer: not wired. The gate's
+  decide path does not call it (capability-gate
+  `tests/test_fig1_box_uncalled.py`).
+- The vestibule's post-bind hardening (seccomp, the `PROT_EXEC` filter,
+  cgroup limits, Landlock): S07 runs the listener with hardening off,
+  because seccomp would apply to the demo process itself.
+- S05 secret in prompt and S06 PII in the audit log: there is no redaction
+  layer in this repo.
+- S10 phishing investigation, S11 alert triage and S13 token usage: those
+  workflows and their usage records do not exist yet.
+- S08-iso measures two gaps without asserting them: a chain cut cleanly after
+  a full row still verifies, because `DecisionChain` keeps no witness of the
+  expected head and row count, and `append` does not verify the chain before
+  it writes, so it appends after a mid-chain edit or delete.
+- The gate scenarios (S01, S02, S03, S04, S09, S12) run in the
+  capability-gate demo.
 
 ## License
 
-`LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `Apache-2.0`. That split is named, not silently flipped.
+`LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `Apache-2.0`.
+That split is named here on purpose. Citation metadata is in
+[CITATION.cff](CITATION.cff).

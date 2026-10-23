@@ -4,7 +4,7 @@
   "runner": "chain_tamper",
   "seed": 1408,
   "real": true,
-  "note": "Needs no VM. Each mode writes a fresh chain of rows, tampers once, then runs verify and one more append. tail_drop (cut after a full row) and append after edit or delete are measured in the detail but not asserted: the chain has no anchor of its expected head, and append does not verify beforehand. A proposal is filed with the P0 demo results.",
+  "note": "Needs no VM. Each mode writes a fresh chain of rows, tampers once, then runs verify and one more append. tail_drop (cut after a full row) and append after edit or delete are measured in the detail but not asserted: the chain has no anchor of its expected head, and append does not verify beforehand.",
   "traffic": {
     "rows": 20,
     "tamper": ["edit", "delete", "torn_tail", "tail_drop"]

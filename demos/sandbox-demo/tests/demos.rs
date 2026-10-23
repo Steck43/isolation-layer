@@ -56,7 +56,7 @@ fn a_changed_seed_changes_the_events() {
 
 #[test]
 fn the_known_chain_gaps_are_measured() {
-    // Recorded so a change in either direction shows up; a proposal is filed with the P0 demo results.
+    // Recorded so a change in either direction shows up; see not_supported in summary.json.
     let r = run_scenario(&scn("S08-iso-decision-chain-tamper"), None, Mutations::default()).unwrap();
     assert_eq!(r.measured["tail_drop_detected"], 0);
     assert_eq!(r.measured["edit_append_refused"], 0);
@@ -102,4 +102,15 @@ fn mutation_s08_verify_skipped_goes_red() {
     let m = Mutations { chain_verify_noop: true, ..Default::default() };
     let r = run_scenario(&scn("S08-iso-decision-chain-tamper"), None, m).unwrap();
     assert_eq!(r.status, "FAIL");
+}
+
+#[test]
+fn every_scenario_record_is_byte_identical_across_runs() {
+    // Detail text masks scratch folders and per-run chain hashes, so the whole
+    // record, not just the counts, is the same on every run.
+    for s in load_dir(&dir()).unwrap() {
+        let a = run_scenario(&s, None, Mutations::default()).unwrap().to_json().to_string();
+        let b = run_scenario(&s, None, Mutations::default()).unwrap().to_json().to_string();
+        assert_eq!(a, b, "{}", s["name"]);
+    }
 }

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/step10_live_harness.py` runs one write through real `Gate.evaluate` and `evaluate_tool_call`, seals gate and atoms digests through `box_entry`, and can feed those digests into live `isolation-manager prove` on the box. `tests/test_step10_live_e2e.py` fails first until those digests match recomputation. `receipts/STEP-10-2026-10-09.md` records the live call (`step10-20261010T010139Z`). `always_invoked` stays false.
 - `receipts/INVENTORY-2026-10-09.md` records box and judge state (BUILT / TESTED / LIVE-PROVEN) before Step 10 wiring. `always_invoked` stays false.
 - `receipts/STEP-9b-2026-10-09.md`: live jailer prove on the box against `main` tip `395319e` with call-bound digests.
+- Demo job in the floor (`demo (make demo-all)`): it runs `make demo-all` on every push and pull request and fails on any FAIL row, then `scripts/readme_proof.py check` fails if a number in the README Proof section differs from the `out/summary.json` that run wrote. The README is rewritten from the code and carries a Proof section generated from `out/summary.json`.
+- Demo records are run-stable: the scratch path and chain row hashes in detail strings are replaced with placeholders, so two runs of `make demo-all` write a byte-identical `out/summary.json`.
 
 ### Fixed
 

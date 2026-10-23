@@ -4,7 +4,7 @@
   "runner": "lifecycle",
   "seed": 1401,
   "real": false,
-  "note": "P0.4 flow. Fresh jail id per task. The VM is a stub host (fake pids, real scratch jail folders). Vestibule, shelf, stage, verdict validate, decide_disposition, decision chain and assert_host_vmm_hygiene are the real crates. hash_lie: the guest claims clear for bytes other than the staged ones. leak_probe: the stub leaves its jail folder and pid behind, and the hygiene check must catch it.",
+  "note": "Fresh jail id per task. The VM is a stub host (fake pids, real scratch jail folders). Vestibule, shelf, stage, verdict validate, decide_disposition, decision chain and assert_host_vmm_hygiene are the real crates. hash_lie: the guest claims clear for bytes other than the staged ones. leak_probe: the stub leaves its jail folder and pid behind, and the hygiene check must catch it.",
   "traffic": {
     "clear": 6,
     "suspect": 3,

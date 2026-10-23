@@ -245,6 +245,31 @@ pub fn run_scenario(scn: &Value, seed: Option<u64>, m: Mutations) -> Result<Scen
     })
 }
 
+/// Detail text that is the same on every run: the scratch folder becomes
+/// `<scratch>`, and 64-hex digests become `<sha256>` (chain rows carry
+/// wall-clock timestamps, so their hashes change per run; counts do not).
+pub fn stable(text: &str, work: &Path) -> String {
+    let s = text.replace(&work.display().to_string(), "<scratch>");
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let run = chars[i..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
+        let edge = i == 0 || !chars[i - 1].is_ascii_alphanumeric();
+        if run == 64 && edge && chars.get(i + 64).map_or(true, |c| !c.is_ascii_alphanumeric()) {
+            out.push_str("<sha256>");
+            i += 64;
+        } else if run > 0 {
+            out.extend(&chars[i..i + run]);
+            i += run;
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn scratch_dir(name: &str) -> PathBuf {
     let n = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let short: String = name.chars().take(3).collect();
@@ -528,7 +553,7 @@ fn stub_claim(staged: &[u8], hash: &str) -> InspectVerdict {
     InspectVerdict { kind: VERDICT_KIND.into(), schema_version: VERDICT_SCHEMA_VERSION, content_hash: hash.into(), outcome, reasons }
 }
 
-// SB1: sandbox lifecycle (P0.4 flow) on a stub VM
+// SB1: sandbox lifecycle on a stub VM
 fn run_lifecycle(_scn: &Value, names: &BTreeMap<String, i64>, seed: u64, work: &Path, m: Mutations) -> Result<Outcome, String> {
     let mut rng = Rng::new(seed);
     let kinds = ["clear", "suspect", "failed", "hash_lie", "malformed", "leak_probe"];
@@ -622,7 +647,7 @@ fn run_lifecycle(_scn: &Value, names: &BTreeMap<String, i64>, seed: u64, work: &
         }
         // Clean up whatever the probe left, so the next task starts from a known host.
         host.teardown(&jail, false);
-        per_task.push(json!({"task": task, "kind": kind, "jail_id": jail, "disposition": disposition, "hygiene": hygiene.err().unwrap_or_else(|| "clean".into())}));
+        per_task.push(json!({"task": task, "kind": kind, "jail_id": jail, "disposition": disposition, "hygiene": stable(&hygiene.err().unwrap_or_else(|| "clean".into()), work)}));
     }
     let chain_ok = if m.chain_verify_noop { true } else { chain.verify().is_ok() };
     let rows = chain.read_all().map_err(|e| e.to_string())?.len() as i64;
@@ -703,7 +728,7 @@ fn run_chain_tamper(scn: &Value, names: &BTreeMap<String, i64>, seed: u64, work:
         }
         a.insert(format!("{mode}_append_refused"), refused as i64);
         a.insert(format!("{mode}_log_unchanged"), unchanged as i64);
-        detail.insert(mode.clone(), json!({"tampered_index": tampered, "verify": msg, "reported_index": idx, "next_append": if refused { append.err().map(|e| e.to_string()) } else { Some("appended".into()) }}));
+        detail.insert(mode.clone(), json!({"tampered_index": tampered, "verify": stable(&msg, work), "reported_index": idx, "next_append": if refused { append.err().map(|e| stable(&e.to_string(), work)) } else { Some("appended".into()) }}));
     }
     a.insert("rows_per_chain".into(), rows as i64);
     a.insert("baseline_verified".into(), baseline_ok);
@@ -717,9 +742,9 @@ pub fn not_supported() -> Value {
         {"scenario": "S01, S02, S03, S04, S09, S12", "reason": "gate scenarios; they run in the capability-gate repo demo"},
         {"scenario": "S05-secret-in-prompt, S06-pii-audit-log", "reason": "no redaction layer in this repo"},
         {"scenario": "S10, S11, S13", "reason": "phishing and triage workflows and their token usage receipts do not exist yet"},
-        {"scenario": "S08 tail drop at a row boundary", "reason": "DecisionChain has no witness or anchor of the expected head and row count, so a chain cut cleanly after a full row verifies. Measured as tail_drop_detected in the S08-iso detail, not asserted. A proposal is filed with the P0 demo results"},
-        {"scenario": "S08 next append refused after edit or delete", "reason": "DecisionChain::append reads the tip but does not verify the chain before it writes, so it appends after a mid-chain edit or delete. Measured, not asserted. A proposal is filed with the P0 demo results"},
-        {"scenario": "real Firecracker boot for S07 and SB1", "reason": "KVM vCPU creation hits a host kernel BUG on this box (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
+        {"scenario": "S08 tail drop at a row boundary", "reason": "DecisionChain has no witness or anchor of the expected head and row count, so a chain cut cleanly after a full row verifies. Measured as tail_drop_detected in the S08-iso detail, not asserted"},
+        {"scenario": "S08 next append refused after edit or delete", "reason": "DecisionChain::append reads the tip but does not verify the chain before it writes, so it appends after a mid-chain edit or delete. Measured, not asserted"},
+        {"scenario": "real Firecracker boot for S07 and SB1", "reason": "KVM vCPU creation hits a host kernel BUG on the dev host (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
     ])
 }
 
@@ -727,7 +752,7 @@ pub fn blockers() -> Value {
     json!([{
         "id": "BLOCKER-kvm",
         "what": "S07 and SB1 run on a stub VM (real: false).",
-        "why": "Firecracker v1.17.0 with the stock quickstart kernel and rootfs segfaults at vCPU creation on this box; dmesg shows kernel BUG at arch/x86/kvm/x86.c:702 in kvm_arch_vcpu_create (nested virtualization).",
+        "why": "Firecracker v1.17.0 with the stock quickstart kernel and rootfs segfaults at vCPU creation on the dev host; dmesg shows kernel BUG at arch/x86/kvm/x86.c:702 in kvm_arch_vcpu_create (nested virtualization).",
         "needs": "A host where KVM_CREATE_VCPU works (bare metal, or a nested setup with a working KVM), /dev/kvm access for the runner via sudo or the kvm group set up by the operator, the golden kernel and rootfs at the paths in aegis-common/src/paths.rs, and jailer-launch installed. Then the same scenarios can drive isolation-manager instead of the stub."
     }])
 }
