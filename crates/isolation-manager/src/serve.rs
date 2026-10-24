@@ -153,6 +153,9 @@ fn handle_conn(mut stream: UnixStream, require_ancestor: Option<String>, allow_g
         .as_ref()
         .map(|t| t.as_str() != tip_before)
         .unwrap_or(false);
+    // `jail_id` names the requested or assigned id for this call. It is not
+    // proof that a jail ran: prove can refuse before it appends any row, and
+    // the reply still names the id. Read `ok` and the chain for what happened.
     let body = json!({
         "ok": code == 0,
         "exit": code,
