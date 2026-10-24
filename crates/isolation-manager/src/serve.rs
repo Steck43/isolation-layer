@@ -149,7 +149,10 @@ fn handle_conn(mut stream: UnixStream, require_ancestor: Option<String>, allow_g
     });
     let chain = DecisionChain::open(default_chain_path());
     let tip = chain.tip_hash().ok();
-    let grew = tip.as_ref().map(|t| t.as_str() != tip_before).unwrap_or(false);
+    let grew = tip
+        .as_ref()
+        .map(|t| t.as_str() != tip_before)
+        .unwrap_or(false);
     let body = json!({
         "ok": code == 0,
         "exit": code,
