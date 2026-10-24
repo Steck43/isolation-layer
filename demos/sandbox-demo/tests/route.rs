@@ -286,3 +286,22 @@ fn route_refuses_a_door_chain_that_does_not_verify() {
     );
     let _ = std::fs::remove_dir_all(&s);
 }
+
+#[test]
+fn r5_same_task_gives_the_same_receipt_after_masking() {
+    let t = task("call-1", &"1".repeat(32), "print(1)");
+    let mask = |mut r: Value| {
+        r["jail_id"] = json!("-");
+        r["chain_tip"] = json!("-");
+        r
+    };
+    let s0 = state("r5-0");
+    let first = mask(receipt(&run(&s0, t.to_string().as_bytes(), &[])));
+    let _ = std::fs::remove_dir_all(&s0);
+    for i in 1..5 {
+        let s = state(&format!("r5-{i}"));
+        let r = mask(receipt(&run(&s, t.to_string().as_bytes(), &[])));
+        assert_eq!(r, first, "run {i}: same task, different receipt");
+        let _ = std::fs::remove_dir_all(&s);
+    }
+}

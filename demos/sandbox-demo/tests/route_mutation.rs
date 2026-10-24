@@ -1,7 +1,7 @@
 //! Mutation checks for the route door: turning a control off through the
 //! library entry flips the R-test outcome. main never sets these switches.
 
-use sandbox_demo::route::{run_route, RouteOpts};
+use sandbox_demo::route::{run_route, RouteOpts, EXIT_IO};
 use sandbox_demo::Mutations;
 use serde_json::json;
 
@@ -82,5 +82,27 @@ fn a_leaky_teardown_is_reported_not_hidden() {
     let r = run_route(&task("print(1)", 1), &s, &RouteOpts::default(), m).unwrap();
     assert_eq!(r["teardown_clean"], false);
     assert_eq!(r["hygiene_ok"], false);
+    let _ = std::fs::remove_dir_all(&s);
+}
+
+#[test]
+fn a_dead_listener_is_an_io_error_not_a_guest_deadline() {
+    let s = state("dead");
+    let m = Mutations {
+        listener_panics: true,
+        ..Mutations::default()
+    };
+    let started = std::time::Instant::now();
+    let e = run_route(&task("print(1)", 1), &s, &RouteOpts::default(), m).unwrap_err();
+    assert_eq!(e.code, EXIT_IO, "{}", e.message);
+    assert!(e.message.contains("listener died"), "{}", e.message);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    let real = run_route(
+        &task("print(1)", 2),
+        &s,
+        &RouteOpts::default(),
+        Mutations::default(),
+    );
+    assert!(real.is_ok(), "the next task on the same state still runs");
     let _ = std::fs::remove_dir_all(&s);
 }
