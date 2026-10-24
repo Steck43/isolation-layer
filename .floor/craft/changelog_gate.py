@@ -80,7 +80,15 @@ def selftest() -> int:
     else:
         print("FAIL user-facing matcher")
         bad += 1
-    print(f"\n{2 - bad}/2 selftest cases correct")
+    crate_and_script = ("crates/vestibule/src/listen.rs", "scripts/box_entry.py")
+    if all(USER_FACING.search(f) for f in crate_and_script) and not USER_FACING.search(
+        "crates/vestibule/tests/uds_deadline.rs"
+    ):
+        print("ok crate src and scripts are user facing")
+    else:
+        print("FAIL crate src and scripts are user facing")
+        bad += 1
+    print(f"\n{3 - bad}/3 selftest cases correct")
     return 1 if bad else 0
 
 
