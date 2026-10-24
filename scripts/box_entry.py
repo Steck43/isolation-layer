@@ -269,45 +269,70 @@ def _spent_store_path() -> Path:
     return Path(chain).parent / _SPENT_NAME
 
 
+def _replace_store(path: Path, rows: list[tuple[str, float]]) -> None:
+    """Swap in the pruned rows; on any error the old store stays in place."""
+    tmp = path.with_name(path.name + ".tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    try:
+        with os.fdopen(os.open(tmp, flags, 0o600), "w", encoding="utf-8") as out:
+            for key, exp in rows:
+                out.write(json.dumps({"key": key, "exp": exp}) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 @contextlib.contextmanager
 def _spent_keys() -> Iterator[set[str]]:
     """Yield the unexpired spent keys under an exclusive lock, then record new ones.
 
+    The lock lives on a separate file so a prune can replace the store whole.
     Raises OSError when the store cannot be opened or written, and ValueError
     on a row it cannot read; the caller refuses the call in both cases.
     """
     path = _spent_store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "r+", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        now = time.time()
-        live: dict[str, float] = {}
-        pruned = False
-        for line in fh:
-            row = json.loads(line)
-            key, exp = row["key"], float(row["exp"])
-            if not isinstance(key, str):
-                raise TypeError("spent store row without a string key")
-            if exp > now:
-                live[key] = exp
-            else:
-                pruned = True
-        seen = _SpentKeys(live)
-        yield seen
-        exp_new = now + BOX_TICKET_LIFETIME_S
-        new = [key for key in seen if key not in live]
-        if pruned:
-            rows = [*live.items(), *((key, exp_new) for key in new)]
-            fh.seek(0)
-            fh.truncate()
-        else:
-            rows = [(key, exp_new) for key in new]
+    lock_path = path.with_name(path.name + ".lock")
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "r+", encoding="utf-8") as fh:
+            now = time.time()
+            live: dict[str, float] = {}
+            pruned = False
+            for line in fh:
+                row = json.loads(line)
+                key, exp = row["key"], float(row["exp"])
+                if not isinstance(key, str):
+                    raise TypeError("spent store row without a string key")
+                if exp > now:
+                    live[key] = exp
+                else:
+                    pruned = True
+            seen = _SpentKeys(live)
+            yield seen
+            exp_new = now + BOX_TICKET_LIFETIME_S
+            new = [key for key in seen if key not in live]
+            if pruned:
+                _replace_store(path, [*live.items(), *((k, exp_new) for k in new)])
+                return
             fh.seek(0, os.SEEK_END)
-        for key, exp in rows:
-            fh.write(json.dumps({"key": key, "exp": exp}) + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())
+            for key in new:
+                fh.write(json.dumps({"key": key, "exp": exp_new}) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    finally:
+        os.close(lock_fd)
 
 
 def _accept_once(receipt: dict[str, Any], **bind: Any) -> bool:
