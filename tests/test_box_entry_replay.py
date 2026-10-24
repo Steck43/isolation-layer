@@ -245,3 +245,92 @@ def test_fresh_receipts_keep_passing(monkeypatch) -> None:
             be, "invoke_live_prove", _fixed_live(be, None, f"mgr-fresh-{i}")
         )
         assert be.run(**_call(f"t-c-live-{i}")) is not None
+
+
+# Failure class: the prune rewrote the store in place (truncate, then write the
+# live rows back), so a write error or a kill between the truncate and the
+# fsync left the store empty or cut and a spent ticket was accepted again.
+
+
+def _seed_store(be, live_tickets: list[str], filler: int = 0) -> Path:
+    """Write one expired row, `filler` live filler rows and the live tickets."""
+    store = be._spent_store_path()
+    store.parent.mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    rows = [{"key": "ticket:expired", "exp": now - 1}]
+    rows += [{"key": f"filler:{i}", "exp": now + 3600} for i in range(filler)]
+    rows += [
+        {"key": "ticket:" + be._sha256_text(t), "exp": now + 3600} for t in live_tickets
+    ]
+    store.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return store
+
+
+def _store_keys(store: Path) -> list[str]:
+    return [json.loads(line)["key"] for line in store.read_text().splitlines()]
+
+
+def test_a_write_error_during_the_prune_keeps_the_spent_rows() -> None:
+    import resource
+    import signal
+
+    be = _load("box_entry_replay_prune_efbig")
+    store = _seed_store(be, ["t-live"])
+    spent = "ticket:" + be._sha256_text("t-live")
+    old = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (0, hard))
+    try:
+        # The prune runs, its write fails with EFBIG, and the call is refused.
+        assert be.run(**_call("t-new")) is None
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+        signal.signal(signal.SIGXFSZ, old)
+    assert spent in _store_keys(store)
+    assert be.run(**_call("t-live")) is None
+
+
+def _prune_then_hang(chain: str, ready) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_kill_{os.getpid()}")
+    real = be.json
+
+    class _HangOnRow:
+        # Stops the child at the first spent store row it writes, so the
+        # parent kills it mid prune on every run, not by timing luck.
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        @staticmethod
+        def dumps(obj, *a, **kw):
+            if isinstance(obj, dict) and set(obj) == {"key", "exp"}:
+                ready.set()
+                while True:
+                    time.sleep(60)
+            return real.dumps(obj, *a, **kw)
+
+    be.json = _HangOnRow()
+    be.run(**_call("t-kill-new"))
+
+
+def test_a_kill_mid_prune_keeps_the_spent_rows() -> None:
+    import os
+    import signal
+
+    be = _load("box_entry_replay_prune_kill")
+    store = _seed_store(be, ["t-kill-live"], filler=20000)
+    before = len(store.read_text().splitlines())
+    ctx = multiprocessing.get_context("fork")
+    ready = ctx.Event()
+    child = ctx.Process(
+        target=_prune_then_hang, args=(os.environ["AEGIS_DECISION_CHAIN"], ready)
+    )
+    child.start()
+    assert ready.wait(timeout=30), "child never reached the prune write"
+    os.kill(child.pid, signal.SIGKILL)
+    child.join(timeout=30)
+    assert child.exitcode == -signal.SIGKILL
+    assert len(store.read_text().splitlines()) == before
+    assert be.run(**_call("t-kill-live")) is None
