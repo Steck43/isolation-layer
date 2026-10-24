@@ -219,6 +219,13 @@ fn guest_for(task_text: &str, task_digest: &str, rng_seed: u64) -> (Guest, bool)
     (Guest::Send(Wire::Json(payload)), hash_lie)
 }
 
+/// What the door got from the listener thread.
+enum Delivery {
+    Answer(Result<vestibule::ResultMessage, vestibule::ListenError>),
+    Deadline,
+    ListenerDied,
+}
+
 /// Serve one guest connection with the real listener, under a deadline.
 /// The listener itself has no accept or read deadline (suspect b), so the
 /// door holds the deadline: on expiry it stops waiting and the process exit
@@ -229,7 +236,8 @@ fn deliver_with_deadline(
     mode: ParseMode,
     reject: &RejectLog,
     deadline: Duration,
-) -> Option<Result<vestibule::ResultMessage, vestibule::ListenError>> {
+    listener_panics: bool,
+) -> Delivery {
     let (tx, rx) = mpsc::channel();
     let path = sock.to_path_buf();
     let opts = ServeOpts {
@@ -237,6 +245,9 @@ fn deliver_with_deadline(
         harden: false,
     };
     thread::spawn(move || {
+        if listener_panics {
+            panic!("listener mutation: panic before serve");
+        }
         let _ = tx.send(serve_one_with_opts(&path, mode, &opts));
     });
     let gpath = sock.to_path_buf();
@@ -265,7 +276,12 @@ fn deliver_with_deadline(
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.read_to_end(&mut ack);
     });
-    let out = rx.recv_timeout(deadline).ok();
+    // A listener that dies drops its sender, which is not a slow guest.
+    let out = match rx.recv_timeout(deadline) {
+        Ok(v) => Delivery::Answer(v),
+        Err(mpsc::RecvTimeoutError::Timeout) => Delivery::Deadline,
+        Err(mpsc::RecvTimeoutError::Disconnected) => Delivery::ListenerDied,
+    };
     let _ = fs::remove_file(sock);
     out
 }
@@ -320,7 +336,14 @@ pub fn run_route(
         ParseMode::Enforce
     };
     let sock = state.join(format!("{ticket}.sock"));
-    let got = deliver_with_deadline(&sock, guest, mode, &reject, opts.guest_deadline);
+    let got = deliver_with_deadline(
+        &sock,
+        guest,
+        mode,
+        &reject,
+        opts.guest_deadline,
+        m.listener_panics,
+    );
 
     let finish = |host: &mut StubHost| -> Result<(bool, bool), RouteError> {
         let leak = m.leak_every_teardown;
@@ -334,7 +357,15 @@ pub fn run_route(
     };
 
     let (disposition, reason, result_hash) = match got {
-        None => {
+        Delivery::ListenerDied => {
+            row(
+                ChainVerdict::FailClosed,
+                "listener died before the guest answered",
+            )?;
+            finish(&mut host)?;
+            return Err(err(EXIT_IO, "listener died before the guest answered"));
+        }
+        Delivery::Deadline => {
             row(
                 ChainVerdict::FailClosed,
                 "guest never answered inside the door deadline",
@@ -348,12 +379,12 @@ pub fn run_route(
                 ),
             ));
         }
-        Some(Err(e)) => {
+        Delivery::Answer(Err(e)) => {
             let why = format!("vestibule: {}", short_err(&e));
             row(ChainVerdict::Reject, &why)?;
             ("rejected".to_string(), why, content_hash(b""))
         }
-        Some(Ok(msg)) => {
+        Delivery::Answer(Ok(msg)) => {
             let hash = guard.handoff_roundtrip(msg.body.as_bytes()).map_err(io)?;
             let staged = stage_from_guard(&guard, &hash, &stage_root).map_err(io)?;
             let bytes = fs::read(&staged.blob_path).map_err(io)?;

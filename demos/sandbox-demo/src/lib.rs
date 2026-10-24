@@ -201,6 +201,8 @@ pub struct Mutations {
     pub leak_every_teardown: bool,
     /// Treat DecisionChain::verify as always passing.
     pub chain_verify_noop: bool,
+    /// The route door's listener thread panics before it serves.
+    pub listener_panics: bool,
 }
 
 pub struct Outcome {
