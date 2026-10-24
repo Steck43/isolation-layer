@@ -8,6 +8,8 @@
 //! tracks fake VMM pids and jail folders so the real hygiene check has
 //! something to compare. Rows that depend on the stub say so (real: false).
 
+pub mod route;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, Write};
@@ -199,6 +201,8 @@ pub struct Mutations {
     pub leak_every_teardown: bool,
     /// Treat DecisionChain::verify as always passing.
     pub chain_verify_noop: bool,
+    /// The route door's listener thread panics before it serves.
+    pub listener_panics: bool,
 }
 
 pub struct Outcome {
@@ -749,14 +753,14 @@ pub fn not_supported() -> Value {
         {"scenario": "S10, S11, S13", "reason": "phishing and triage workflows and their token usage receipts do not exist yet"},
         {"scenario": "S08 tail drop at a row boundary", "reason": "DecisionChain has no witness or anchor of the expected head and row count, so a chain cut cleanly after a full row verifies. Measured as tail_drop_detected in the S08-iso detail, not asserted"},
         {"scenario": "S08 next append refused after edit or delete", "reason": "DecisionChain::append reads the tip but does not verify the chain before it writes, so it appends after a mid-chain edit or delete. Measured, not asserted"},
-        {"scenario": "real Firecracker boot for S07 and SB1", "reason": "KVM vCPU creation hits a host kernel BUG on the dev host (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
+        {"scenario": "real Firecracker boot for S07, SB1 and the route door", "reason": "KVM vCPU creation hits a host kernel BUG on the dev host (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
     ])
 }
 
 pub fn blockers() -> Value {
     json!([{
         "id": "BLOCKER-kvm",
-        "what": "S07 and SB1 run on a stub VM (real: false).",
+        "what": "S07, SB1 and the route door (sandbox-demo route) run on a stub VM (real: false).",
         "why": "Firecracker v1.17.0 with the stock quickstart kernel and rootfs segfaults at vCPU creation on the dev host; dmesg shows kernel BUG at arch/x86/kvm/x86.c:702 in kvm_arch_vcpu_create (nested virtualization).",
         "needs": "A host where KVM_CREATE_VCPU works (bare metal, or a nested setup with a working KVM), /dev/kvm access for the runner via sudo or the kvm group set up by the operator, the golden kernel and rootfs at the paths in aegis-common/src/paths.rs, and jailer-launch installed. Then the same scenarios can drive isolation-manager instead of the stub."
     }])
