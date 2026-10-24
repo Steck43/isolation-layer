@@ -753,7 +753,7 @@ pub fn not_supported() -> Value {
         {"scenario": "S10, S11, S13", "reason": "phishing and triage workflows and their token usage receipts do not exist yet"},
         {"scenario": "S08 tail drop at a row boundary", "reason": "DecisionChain has no witness or anchor of the expected head and row count, so a chain cut cleanly after a full row verifies. Measured as tail_drop_detected in the S08-iso detail, not asserted"},
         {"scenario": "S08 next append refused after edit or delete", "reason": "DecisionChain::append reads the tip but does not verify the chain before it writes, so it appends after a mid-chain edit or delete. Measured, not asserted"},
-        {"scenario": "real Firecracker boot for S07 and SB1", "reason": "KVM vCPU creation hits a host kernel BUG on the dev host (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
+        {"scenario": "real Firecracker boot for S07, SB1 and the route door", "reason": "KVM vCPU creation hits a host kernel BUG on the dev host (nested virt); rows run on a stub VM. See BLOCKER in summary.json"}
     ])
 }
 

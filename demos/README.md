@@ -34,8 +34,9 @@ that sends nothing, or stops mid frame, ends the run with exit 4 inside the
 guest deadline (`--guest-deadline-ms`, 10 s by default), with a `fail_closed`
 row and a teardown on the chain. The vestibule listener has no accept or read
 deadline of its own; the door holds that deadline. A door chain that does not
-verify stops the run with exit 5. State (chain, reject log, shelf, receipts)
-lives under `--state`.
+verify stops the run with exit 5. Exit 6 is an io error, including a
+listener that died before the guest answered. State (chain, reject log,
+shelf, receipts) lives under `--state`.
 
 The VM is the stub host, so the stub guest picks its frame from synthetic
 markers in the task text (`SYNTH_MARKER_SUSPECT`, `SYNTH_MARKER_FAILED`,
