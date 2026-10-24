@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import time
 import uuid
 from collections.abc import Iterator
@@ -271,10 +272,12 @@ def _spent_store_path() -> Path:
 
 def _replace_store(path: Path, rows: list[tuple[str, float]]) -> None:
     """Swap in the pruned rows; on any error the old store stays in place."""
-    tmp = path.with_name(path.name + ".tmp")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    # mkstemp picks an unused name and opens it O_EXCL at 0600, so a file
+    # planted beside the store is never truncated, followed or waited on.
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(name)
     try:
-        with os.fdopen(os.open(tmp, flags, 0o600), "w", encoding="utf-8") as out:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
             for key, exp in rows:
                 out.write(json.dumps({"key": key, "exp": exp}) + "\n")
             out.flush()
