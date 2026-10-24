@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use sandbox_demo::{load_dir, load_scenario, run_scenario, Mutations};
+use sandbox_demo::{load_dir, load_scenario, run_scenario, stable, Mutations};
 use serde_json::Value;
 
 fn dir() -> PathBuf {
@@ -112,5 +112,17 @@ fn every_scenario_record_is_byte_identical_across_runs() {
         let a = run_scenario(&s, None, Mutations::default()).unwrap().to_json().to_string();
         let b = run_scenario(&s, None, Mutations::default()).unwrap().to_json().to_string();
         assert_eq!(a, b, "{}", s["name"]);
+    }
+}
+
+#[test]
+fn stable_masks_only_the_scratch_path_and_standalone_64_hex() {
+    // The byte-identical test above passes whether stable() masks too little
+    // or too much; this pins the edges so a wider mask cannot hide detail text.
+    let h64 = "0123456789abcdef".repeat(4);
+    let w = std::path::Path::new("/tmp/scratch-x");
+    assert_eq!(stable(&format!("{h64} at /tmp/scratch-x/c.log"), w), "<sha256> at <scratch>/c.log");
+    for t in [h64[..63].to_string(), format!("{h64}a"), format!("{h64}g"), format!("x{h64}"), "index 17 count 1307 deadbeef".into()] {
+        assert_eq!(stable(&t, w), t);
     }
 }
