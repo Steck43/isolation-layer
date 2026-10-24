@@ -18,7 +18,7 @@ from pathlib import Path
 EXIT_FAIL = 2
 
 USER_FACING = re.compile(
-    r"^(src/|lib/|app/|capability_gate\.py|__init__\.py|tools/|"
+    r"^(src/|crates/[^/]+/src/|scripts/|lib/|app/|capability_gate\.py|__init__\.py|tools/|"
     r"\.github/workflows/|pyproject\.toml|setup\.py|README)",
     re.I,
 )
