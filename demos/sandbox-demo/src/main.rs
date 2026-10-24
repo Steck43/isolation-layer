@@ -1,5 +1,8 @@
 //! sandbox-demo run <scenarios dir> --out <dir>
 //! Prints the summary table and writes <dir>/summary.json and <dir>/runs/.
+//!
+//! sandbox-demo route --state <dir> [--guest-deadline-ms N] < task.json
+//! The isolate route door (STUBBED, real: false); see src/route.rs.
 
 use std::fs;
 use std::path::PathBuf;
@@ -10,8 +13,11 @@ use serde_json::json;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("route") {
+        exit(sandbox_demo::route::main_route(&args[2..]));
+    }
     if args.len() < 3 || args[1] != "run" {
-        eprintln!("usage: sandbox-demo run <scenarios dir> [--out DIR]");
+        eprintln!("usage: sandbox-demo run <scenarios dir> [--out DIR] | sandbox-demo route --state DIR");
         exit(2);
     }
     let dir = PathBuf::from(&args[2]);

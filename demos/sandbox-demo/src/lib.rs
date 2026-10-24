@@ -8,6 +8,8 @@
 //! tracks fake VMM pids and jail folders so the real hygiene check has
 //! something to compare. Rows that depend on the stub say so (real: false).
 
+pub mod route;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, Write};
