@@ -34,7 +34,15 @@ pub const TASK_SCHEMA: &str = "isolate-route-task/1";
 pub const RECEIPT_SCHEMA: &str = "isolate-route-receipt/1";
 /// Largest task the door reads. The gate refuses bigger tasks before launch.
 pub const MAX_TASK_BYTES: usize = 64 * 1024;
-const TASK_KEYS: [&str; 7] = ["schema", "route_ticket", "tool_call_id", "tool", "skill", "args", "gate_decision_sha256"];
+const TASK_KEYS: [&str; 7] = [
+    "schema",
+    "route_ticket",
+    "tool_call_id",
+    "tool",
+    "skill",
+    "args",
+    "gate_decision_sha256",
+];
 
 /// Exit codes. 0 is a receipt (any disposition).
 pub const EXIT_REFUSED: i32 = 2;
@@ -51,7 +59,9 @@ pub struct RouteOpts {
 
 impl Default for RouteOpts {
     fn default() -> Self {
-        RouteOpts { guest_deadline: Duration::from_secs(10) }
+        RouteOpts {
+            guest_deadline: Duration::from_secs(10),
+        }
     }
 }
 
@@ -62,7 +72,10 @@ pub struct RouteError {
 }
 
 fn err(code: i32, message: impl Into<String>) -> RouteError {
-    RouteError { code, message: message.into() }
+    RouteError {
+        code,
+        message: message.into(),
+    }
 }
 
 fn io(e: impl std::fmt::Display) -> RouteError {
@@ -70,7 +83,9 @@ fn io(e: impl std::fmt::Display) -> RouteError {
 }
 
 fn is_hex(s: &str, n: usize) -> bool {
-    s.len() == n && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == n
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Check the task envelope. Every refusal happens before any launch.
@@ -80,7 +95,10 @@ pub fn parse_task(input: &[u8]) -> Result<Map<String, Value>, RouteError> {
         return Err(refuse(&format!("over {MAX_TASK_BYTES} bytes")));
     }
     let v: Value = serde_json::from_slice(input).map_err(|_| refuse("not JSON"))?;
-    let obj = v.as_object().ok_or_else(|| refuse("not an object"))?.clone();
+    let obj = v
+        .as_object()
+        .ok_or_else(|| refuse("not an object"))?
+        .clone();
     for k in obj.keys() {
         if !TASK_KEYS.contains(&k.as_str()) {
             return Err(refuse(&format!("unknown field {k:?}")));
@@ -91,7 +109,11 @@ pub fn parse_task(input: &[u8]) -> Result<Map<String, Value>, RouteError> {
             return Err(refuse(&format!("missing field {k:?}")));
         }
     }
-    let text = |k: &str| obj[k].as_str().ok_or_else(|| refuse(&format!("{k} is not a string")));
+    let text = |k: &str| {
+        obj[k]
+            .as_str()
+            .ok_or_else(|| refuse(&format!("{k} is not a string")))
+    };
     if text("schema")? != TASK_SCHEMA {
         return Err(refuse("schema is not isolate-route-task/1"));
     }
@@ -135,14 +157,19 @@ fn canonical(v: &Value) -> String {
                 .collect();
             format!("{{{}}}", parts.join(","))
         }
-        Value::Array(a) => format!("[{}]", a.iter().map(canonical).collect::<Vec<_>>().join(",")),
+        Value::Array(a) => format!(
+            "[{}]",
+            a.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
         other => serde_json::to_string(other).unwrap(),
     }
 }
 
 fn fresh_id() -> Result<String, RouteError> {
     let mut b = [0u8; 8];
-    fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).map_err(io)?;
+    fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut b))
+        .map_err(io)?;
     Ok(format!("jail-route-{:016x}", u64::from_be_bytes(b)))
 }
 
@@ -156,7 +183,10 @@ enum Guest {
 fn guest_for(task_text: &str, task_digest: &str, rng_seed: u64) -> (Guest, bool) {
     let mut rng = Rng::new(rng_seed);
     let tid = format!("t-{}", &task_digest[..16]);
-    let mut body = format!("box result for task {task_digest} value {:016x}", rng.next_u64());
+    let mut body = format!(
+        "box result for task {task_digest} value {:016x}",
+        rng.next_u64()
+    );
     for m in ["SYNTH_MARKER_SUSPECT", "SYNTH_MARKER_FAILED"] {
         if task_text.contains(m) {
             body.push(' ');
@@ -170,11 +200,22 @@ fn guest_for(task_text: &str, task_digest: &str, rng_seed: u64) -> (Guest, bool)
     if task_text.contains("SYNTH_GUEST_STALL") {
         return (Guest::Stall, false);
     }
-    let kind = if task_text.contains("SYNTH_GUEST_MALFORMED") { "exec" } else { "result" };
+    let kind = if task_text.contains("SYNTH_GUEST_MALFORMED") {
+        "exec"
+    } else {
+        "result"
+    };
     if task_text.contains("SYNTH_GUEST_OVERSIZE") {
         body = format!("{body} {}", "A".repeat(MAX_BODY_BYTES + 64));
     }
-    let payload = serde_json::to_vec(&result_json(json!(SCHEMA_VERSION), kind, &tid, "artifact.txt", &body)).unwrap();
+    let payload = serde_json::to_vec(&result_json(
+        json!(SCHEMA_VERSION),
+        kind,
+        &tid,
+        "artifact.txt",
+        &body,
+    ))
+    .unwrap();
     (Guest::Send(Wire::Json(payload)), hash_lie)
 }
 
@@ -191,7 +232,10 @@ fn deliver_with_deadline(
 ) -> Option<Result<vestibule::ResultMessage, vestibule::ListenError>> {
     let (tx, rx) = mpsc::channel();
     let path = sock.to_path_buf();
-    let opts = ServeOpts { reject_log: Some(reject.clone()), harden: false };
+    let opts = ServeOpts {
+        reject_log: Some(reject.clone()),
+        harden: false,
+    };
     thread::spawn(move || {
         let _ = tx.send(serve_one_with_opts(&path, mode, &opts));
     });
@@ -228,7 +272,12 @@ fn deliver_with_deadline(
 
 /// Run one task. Returns the receipt; every error is a refusal or a failure
 /// the caller must treat as a block.
-pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> Result<Value, RouteError> {
+pub fn run_route(
+    input: &[u8],
+    state: &Path,
+    opts: &RouteOpts,
+    m: Mutations,
+) -> Result<Value, RouteError> {
     let task = parse_task(input)?;
     let digest = task_sha256(&task);
     let call = task["tool_call_id"].as_str().unwrap().to_string();
@@ -238,7 +287,9 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
     fs::create_dir_all(state).map_err(io)?;
     let chain = DecisionChain::open(state.join("decision-chain.jsonl"));
     if state.join("decision-chain.jsonl").exists() {
-        chain.verify().map_err(|e| err(EXIT_CHAIN, format!("door chain does not verify: {e}")))?;
+        chain
+            .verify()
+            .map_err(|e| err(EXIT_CHAIN, format!("door chain does not verify: {e}")))?;
     }
     let reject = RejectLog::open(state.join("vestibule-rejects.jsonl")).map_err(io)?;
     let guard = HostGuard::new(Shelf::open(state.join("shelf")).map_err(io)?);
@@ -248,14 +299,26 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
     let mut host = StubHost::new(&state.join("host").join(&ticket), &mut rng);
     let jail = fresh_id()?;
     let session = format!("route-{ticket}");
-    let row = |v: ChainVerdict, why: &str| chain.append(&jail, v, why, Some(&session), Some(&call)).map(|_| ()).map_err(|e| err(EXIT_CHAIN, e.to_string()));
+    let row = |v: ChainVerdict, why: &str| {
+        chain
+            .append(&jail, v, why, Some(&session), Some(&call))
+            .map(|_| ())
+            .map_err(|e| err(EXIT_CHAIN, e.to_string()))
+    };
 
     let before = host.snapshot();
     host.launch(&jail);
-    row(ChainVerdict::Launch, "stub vm launch for an isolate route (no KVM on this host)")?;
+    row(
+        ChainVerdict::Launch,
+        "stub vm launch for an isolate route (no KVM on this host)",
+    )?;
 
     let (guest, hash_lie) = guest_for(&task_text, &digest, seed);
-    let mode = if m.vestibule_disabled { ParseMode::Disabled } else { ParseMode::Enforce };
+    let mode = if m.vestibule_disabled {
+        ParseMode::Disabled
+    } else {
+        ParseMode::Enforce
+    };
     let sock = state.join(format!("{ticket}.sock"));
     let got = deliver_with_deadline(&sock, guest, mode, &reject, opts.guest_deadline);
 
@@ -272,9 +335,18 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
 
     let (disposition, reason, result_hash) = match got {
         None => {
-            row(ChainVerdict::FailClosed, "guest never answered inside the door deadline")?;
+            row(
+                ChainVerdict::FailClosed,
+                "guest never answered inside the door deadline",
+            )?;
             finish(&mut host)?;
-            return Err(err(EXIT_GUEST_DEADLINE, format!("guest never answered within {} ms", opts.guest_deadline.as_millis())));
+            return Err(err(
+                EXIT_GUEST_DEADLINE,
+                format!(
+                    "guest never answered within {} ms",
+                    opts.guest_deadline.as_millis()
+                ),
+            ));
         }
         Some(Err(e)) => {
             let why = format!("vestibule: {}", short_err(&e));
@@ -289,7 +361,11 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
             if hash_lie {
                 claim.content_hash = content_hash(format!("other bytes {call}").as_bytes());
             }
-            let host_hash = if m.trust_claim_hash { claim.content_hash.clone() } else { staged.hash.clone() };
+            let host_hash = if m.trust_claim_hash {
+                claim.content_hash.clone()
+            } else {
+                staged.hash.clone()
+            };
             let d = decide_disposition(&claim, &host_hash);
             let why = format!("disposition {}", d.as_str());
             row(ChainVerdict::Prove, &why)?;
@@ -298,7 +374,9 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
         }
     };
     let (teardown_clean, hygiene_ok) = finish(&mut host)?;
-    let tip = chain.tip_hash().map_err(|e| err(EXIT_CHAIN, e.to_string()))?;
+    let tip = chain
+        .tip_hash()
+        .map_err(|e| err(EXIT_CHAIN, e.to_string()))?;
     let receipt = json!({
         "schema": RECEIPT_SCHEMA,
         "route_ticket": ticket,
@@ -315,7 +393,11 @@ pub fn run_route(input: &[u8], state: &Path, opts: &RouteOpts, m: Mutations) -> 
         "real": false,
         "mode": "STUBBED",
     });
-    let mut f = fs::OpenOptions::new().create(true).append(true).open(state.join("receipts.jsonl")).map_err(io)?;
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(state.join("receipts.jsonl"))
+        .map_err(io)?;
     writeln!(f, "{receipt}").map_err(io)?;
     Ok(receipt)
 }
@@ -329,7 +411,9 @@ pub fn main_route(args: &[String]) -> i32 {
         match a.as_str() {
             "--state" => state = it.next().map(PathBuf::from),
             "--guest-deadline-ms" => match it.next().and_then(|v| v.parse::<u64>().ok()) {
-                Some(ms) if (1..=120_000).contains(&ms) => opts.guest_deadline = Duration::from_millis(ms),
+                Some(ms) if (1..=120_000).contains(&ms) => {
+                    opts.guest_deadline = Duration::from_millis(ms)
+                }
                 _ => {
                     eprintln!("route: --guest-deadline-ms takes 1 to 120000");
                     return EXIT_REFUSED;
@@ -346,7 +430,10 @@ pub fn main_route(args: &[String]) -> i32 {
         return EXIT_REFUSED;
     };
     let mut input = Vec::new();
-    if let Err(e) = std::io::stdin().take(MAX_TASK_BYTES as u64 + 1).read_to_end(&mut input) {
+    if let Err(e) = std::io::stdin()
+        .take(MAX_TASK_BYTES as u64 + 1)
+        .read_to_end(&mut input)
+    {
         eprintln!("route: door io error: {e}");
         return EXIT_IO;
     }

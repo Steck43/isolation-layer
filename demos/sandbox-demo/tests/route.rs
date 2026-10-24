@@ -47,14 +47,31 @@ fn run(state: &Path, input: &[u8], extra: &[&str]) -> Output {
 }
 
 fn receipt(out: &Output) -> Value {
-    assert!(out.status.success(), "exit {:?} stderr {}", out.status.code(), String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "exit {:?} stderr {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().rev().find(|l| !l.trim().is_empty()).expect("a receipt line");
+    let line = text
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .expect("a receipt line");
     serde_json::from_str(line).expect("receipt is JSON")
 }
 
 fn canon_sha(t: &Value) -> String {
-    let keys = ["schema", "route_ticket", "tool_call_id", "tool", "skill", "args", "gate_decision_sha256"];
+    let keys = [
+        "schema",
+        "route_ticket",
+        "tool_call_id",
+        "tool",
+        "skill",
+        "args",
+        "gate_decision_sha256",
+    ];
     let mut m = serde_json::Map::new();
     for k in keys {
         m.insert(k.to_string(), t[k].clone());
@@ -63,7 +80,9 @@ fn canon_sha(t: &Value) -> String {
 }
 
 fn jail_dirs(state: &Path) -> usize {
-    std::fs::read_dir(state.join("jailer").join("firecracker")).map(|d| d.count()).unwrap_or(0)
+    std::fs::read_dir(state.join("jailer").join("firecracker"))
+        .map(|d| d.count())
+        .unwrap_or(0)
 }
 
 #[test]
@@ -92,8 +111,12 @@ fn r1_one_task_in_one_bound_receipt_out() {
     chain.verify().expect("door chain verifies");
     let rows = chain.read_all().unwrap();
     assert_eq!(rows.len(), 6, "launch, prove, teardown per task");
-    assert!(rows[..3].iter().all(|r| r.jail_id == a["jail_id"].as_str().unwrap()));
-    assert!(rows[3..].iter().all(|r| r.jail_id == b["jail_id"].as_str().unwrap()));
+    assert!(rows[..3]
+        .iter()
+        .all(|r| r.jail_id == a["jail_id"].as_str().unwrap()));
+    assert!(rows[3..]
+        .iter()
+        .all(|r| r.jail_id == b["jail_id"].as_str().unwrap()));
     assert_eq!(b["chain_tip"].as_str().unwrap(), chain.tip_hash().unwrap());
     assert_eq!(jail_dirs(&s), 0, "no jail folder left behind");
     let _ = std::fs::remove_dir_all(&s);
@@ -146,11 +169,25 @@ fn r2_malformed_task_is_refused_before_launch() {
     ];
     for (i, input) in inputs.iter().enumerate() {
         let out = run(&s, input, &[]);
-        assert_eq!(out.status.code(), Some(2), "case {i}: {}", String::from_utf8_lossy(&out.stderr));
-        assert!(String::from_utf8_lossy(&out.stderr).contains("task refused"), "case {i}");
-        assert!(out.stdout.is_empty(), "case {i}: no receipt for a refused task");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "case {i}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("task refused"),
+            "case {i}"
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "case {i}: no receipt for a refused task"
+        );
     }
-    assert!(!s.join("decision-chain.jsonl").exists(), "nothing launched, nothing chained");
+    assert!(
+        !s.join("decision-chain.jsonl").exists(),
+        "nothing launched, nothing chained"
+    );
     assert_eq!(jail_dirs(&s), 0);
     let _ = std::fs::remove_dir_all(&s);
 }
@@ -158,7 +195,10 @@ fn r2_malformed_task_is_refused_before_launch() {
 #[test]
 fn r3_oversize_or_off_schema_guest_result_is_rejected_and_logged() {
     let s = state("r3");
-    for (i, code) in ["SYNTH_GUEST_OVERSIZE", "SYNTH_GUEST_MALFORMED"].iter().enumerate() {
+    for (i, code) in ["SYNTH_GUEST_OVERSIZE", "SYNTH_GUEST_MALFORMED"]
+        .iter()
+        .enumerate()
+    {
         let t = task(&format!("c{i}"), &format!("{i:0>32}"), code);
         let r = receipt(&run(&s, t.to_string().as_bytes(), &[]));
         assert_eq!(r["disposition"], "rejected", "{code}");
@@ -166,9 +206,14 @@ fn r3_oversize_or_off_schema_guest_result_is_rejected_and_logged() {
     }
     let log = std::fs::read_to_string(s.join("vestibule-rejects.jsonl")).expect("reject log");
     assert_eq!(log.lines().count(), 2);
-    assert!(log.contains("MAX_BODY_BYTES") || log.contains("exceeds"), "{log}");
+    assert!(
+        log.contains("MAX_BODY_BYTES") || log.contains("exceeds"),
+        "{log}"
+    );
     assert!(log.contains("not allowed"), "{log}");
-    let shelved = std::fs::read_dir(s.join("shelf").join("objects")).map(|d| d.count()).unwrap_or(0);
+    let shelved = std::fs::read_dir(s.join("shelf").join("objects"))
+        .map(|d| d.count())
+        .unwrap_or(0);
     assert_eq!(shelved, 0, "a rejected result never reaches the shelf");
     let _ = std::fs::remove_dir_all(&s);
 }
@@ -178,10 +223,19 @@ fn r4_guest_that_never_connects_errors_inside_the_deadline() {
     let s = state("r4");
     let t = task("call-1", &"1".repeat(32), "SYNTH_GUEST_SILENT");
     let start = Instant::now();
-    let out = run(&s, t.to_string().as_bytes(), &["--guest-deadline-ms", "500"]);
+    let out = run(
+        &s,
+        t.to_string().as_bytes(),
+        &["--guest-deadline-ms", "500"],
+    );
     let took = start.elapsed();
     assert!(took < Duration::from_secs(5), "door took {took:?}");
-    assert_eq!(out.status.code(), Some(4), "stderr {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "stderr {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(String::from_utf8_lossy(&out.stderr).contains("guest never answered"));
     assert!(out.stdout.is_empty());
     let chain = DecisionChain::open(s.join("decision-chain.jsonl"));
@@ -198,7 +252,11 @@ fn r4_guest_that_stalls_mid_frame_errors_inside_the_deadline() {
     let s = state("r4b");
     let t = task("call-1", &"1".repeat(32), "SYNTH_GUEST_STALL");
     let start = Instant::now();
-    let out = run(&s, t.to_string().as_bytes(), &["--guest-deadline-ms", "500"]);
+    let out = run(
+        &s,
+        t.to_string().as_bytes(),
+        &["--guest-deadline-ms", "500"],
+    );
     assert!(start.elapsed() < Duration::from_secs(5));
     assert_eq!(out.status.code(), Some(4));
     assert_eq!(jail_dirs(&s), 0);
@@ -213,7 +271,18 @@ fn route_refuses_a_door_chain_that_does_not_verify() {
     let p = s.join("decision-chain.jsonl");
     let text = std::fs::read_to_string(&p).unwrap();
     std::fs::write(&p, text.replacen("launch", "prove", 1)).unwrap();
-    let out = run(&s, task("call-2", &"2".repeat(32), "print(2)").to_string().as_bytes(), &[]);
-    assert_eq!(out.status.code(), Some(5), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = run(
+        &s,
+        task("call-2", &"2".repeat(32), "print(2)")
+            .to_string()
+            .as_bytes(),
+        &[],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let _ = std::fs::remove_dir_all(&s);
 }

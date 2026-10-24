@@ -28,10 +28,28 @@ fn state(tag: &str) -> std::path::PathBuf {
 #[test]
 fn lax_vestibule_lets_the_off_schema_result_advance() {
     let s = state("lax");
-    let m = Mutations { vestibule_disabled: true, ..Mutations::default() };
-    let r = run_route(&task("SYNTH_GUEST_MALFORMED", 1), &s, &RouteOpts::default(), m).unwrap();
-    assert_eq!(r["disposition"], "advance", "R3 goes red under a lax parse mode");
-    let real = run_route(&task("SYNTH_GUEST_MALFORMED", 2), &s, &RouteOpts::default(), Mutations::default()).unwrap();
+    let m = Mutations {
+        vestibule_disabled: true,
+        ..Mutations::default()
+    };
+    let r = run_route(
+        &task("SYNTH_GUEST_MALFORMED", 1),
+        &s,
+        &RouteOpts::default(),
+        m,
+    )
+    .unwrap();
+    assert_eq!(
+        r["disposition"], "advance",
+        "R3 goes red under a lax parse mode"
+    );
+    let real = run_route(
+        &task("SYNTH_GUEST_MALFORMED", 2),
+        &s,
+        &RouteOpts::default(),
+        Mutations::default(),
+    )
+    .unwrap();
     assert_eq!(real["disposition"], "rejected");
     let _ = std::fs::remove_dir_all(&s);
 }
@@ -39,8 +57,17 @@ fn lax_vestibule_lets_the_off_schema_result_advance() {
 #[test]
 fn trusting_the_claimed_hash_lets_the_hash_lie_advance() {
     let s = state("trust");
-    let m = Mutations { trust_claim_hash: true, ..Mutations::default() };
-    let r = run_route(&task("SYNTH_GUEST_HASH_LIE", 1), &s, &RouteOpts::default(), m).unwrap();
+    let m = Mutations {
+        trust_claim_hash: true,
+        ..Mutations::default()
+    };
+    let r = run_route(
+        &task("SYNTH_GUEST_HASH_LIE", 1),
+        &s,
+        &RouteOpts::default(),
+        m,
+    )
+    .unwrap();
     assert_eq!(r["disposition"], "advance");
     let _ = std::fs::remove_dir_all(&s);
 }
@@ -48,7 +75,10 @@ fn trusting_the_claimed_hash_lets_the_hash_lie_advance() {
 #[test]
 fn a_leaky_teardown_is_reported_not_hidden() {
     let s = state("leak");
-    let m = Mutations { leak_every_teardown: true, ..Mutations::default() };
+    let m = Mutations {
+        leak_every_teardown: true,
+        ..Mutations::default()
+    };
     let r = run_route(&task("print(1)", 1), &s, &RouteOpts::default(), m).unwrap();
     assert_eq!(r["teardown_clean"], false);
     assert_eq!(r["hygiene_ok"], false);
