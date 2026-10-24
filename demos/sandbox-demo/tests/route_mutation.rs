@@ -97,6 +97,21 @@ fn a_dead_listener_is_an_io_error_not_a_guest_deadline() {
     assert_eq!(e.code, EXIT_IO, "{}", e.message);
     assert!(e.message.contains("listener died"), "{}", e.message);
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    let chain = aegis_common::DecisionChain::open(s.join("decision-chain.jsonl"));
+    chain
+        .verify()
+        .expect("door chain verifies after a dead listener");
+    let verdicts: Vec<String> = chain
+        .read_all()
+        .unwrap()
+        .iter()
+        .map(|r| r.verdict.as_str().to_string())
+        .collect();
+    assert_eq!(verdicts, ["launch", "fail_closed", "teardown"]);
+    assert!(
+        !s.join("host").join(format!("{:0>32}", 1)).exists(),
+        "teardown ran after a dead listener"
+    );
     let real = run_route(
         &task("print(1)", 2),
         &s,
