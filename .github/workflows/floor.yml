@@ -163,9 +163,9 @@ jobs:
       # Older demo files and crates/ predate this check, so it names the route
       # door files and main.rs, plus every .rs file the change adds; widen the
       # list as other files are formatted. On a push the base is the pushed
-      # range's before sha, so a file added early in a multi commit push is
-      # still checked. Renamed files are not counted as added, and there is no
-      # merge_group trigger.
+      # range's before sha (HEAD~1 on a new branch), so a file added early in a
+      # multi commit push is still checked. Renamed files are not counted as
+      # added, and there is no merge_group trigger.
       - name: rustfmt --check (route door files and every added .rs file)
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
