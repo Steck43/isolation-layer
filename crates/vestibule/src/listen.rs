@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::frame::{decode_frame, FrameError, MAX_FRAME_BYTES};
 use crate::harden::{
@@ -58,7 +59,7 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
 }
 
 fn accept_one_result_logged(
-    stream: &mut UnixStream,
+    stream: &mut impl Read,
     mode: ParseMode,
     reject: Option<&RejectLog>,
 ) -> Result<ResultMessage, ListenError> {
@@ -104,6 +105,79 @@ pub fn bind_uds(path: &Path) -> Result<UnixListener, ListenError> {
     Ok(UnixListener::bind(path)?)
 }
 
+/// Deadline for the unix socket serve when the caller gives none.
+pub const UDS_SERVE_DEADLINE: Duration = Duration::from_secs(60);
+
+/// Accept one connection before `deadline`, then bound its writes by the time
+/// left. A guest that never connects gets `TimedOut` instead of holding the
+/// listener; reads are bounded by [`DeadlineStream`].
+fn accept_until(listener: &UnixListener, deadline: Instant) -> Result<UnixStream, ListenError> {
+    listener.set_nonblocking(true)?;
+    let stream = loop {
+        match listener.accept() {
+            Ok((s, _)) => break s,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(timed_out("no guest connected before the deadline"));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
+    stream.set_nonblocking(false)?;
+    let left = deadline
+        .saturating_duration_since(Instant::now())
+        .max(Duration::from_millis(1));
+    stream.set_read_timeout(Some(left))?;
+    stream.set_write_timeout(Some(left))?;
+    Ok(stream)
+}
+
+fn timed_out(msg: &str) -> ListenError {
+    ListenError::Io(timed_out_io(msg))
+}
+
+fn timed_out_io(msg: &str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::TimedOut, format!("timed out: {msg}"))
+}
+
+/// Reads from a guest stream with one deadline over the whole frame. Before
+/// each read it sets the socket timeout to the time left, so a guest that
+/// drips one byte at a time cannot stretch the frame past the deadline. A read
+/// that times out, or any read once the deadline has passed, is `TimedOut`.
+struct DeadlineStream<'a> {
+    inner: &'a mut UnixStream,
+    deadline: Instant,
+}
+
+impl<'a> DeadlineStream<'a> {
+    fn new(inner: &'a mut UnixStream, deadline: Instant) -> Self {
+        Self { inner, deadline }
+    }
+}
+
+impl Read for DeadlineStream<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(timed_out_io("guest stalled mid frame"));
+        }
+        self.inner.set_read_timeout(Some(left))?;
+        match self.inner.read(buf) {
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                Err(timed_out_io("guest stalled mid frame"))
+            }
+            other => other,
+        }
+    }
+}
+
 /// Serve exactly one connection then return the parsed message (test/prove helper).
 pub fn serve_one(path: &Path, mode: ParseMode) -> Result<ResultMessage, ListenError> {
     serve_one_with_opts(path, mode, &ServeOpts::default())
@@ -114,6 +188,17 @@ pub fn serve_one_with_opts(
     mode: ParseMode,
     opts: &ServeOpts,
 ) -> Result<ResultMessage, ListenError> {
+    serve_one_with_deadline(path, mode, opts, UDS_SERVE_DEADLINE)
+}
+
+/// As `serve_one_with_opts`, with the whole serve bounded by `timeout`.
+pub fn serve_one_with_deadline(
+    path: &Path,
+    mode: ParseMode,
+    opts: &ServeOpts,
+    timeout: Duration,
+) -> Result<ResultMessage, ListenError> {
+    let deadline = Instant::now() + timeout;
     let listener = bind_uds(path)?;
     if opts.harden {
         let roots = landlock_roots_for_listen_path(path);
@@ -124,8 +209,12 @@ pub fn serve_one_with_opts(
             report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail, report.landlock
         );
     }
-    let (mut stream, _) = listener.accept()?;
-    let msg = accept_one_result_logged(&mut stream, mode, opts.reject_log.as_ref())?;
+    let mut stream = accept_until(&listener, deadline)?;
+    let msg = accept_one_result_logged(
+        &mut DeadlineStream::new(&mut stream, deadline),
+        mode,
+        opts.reject_log.as_ref(),
+    )?;
     let _ = stream.write_all(b"ACK\n");
     Ok(msg)
 }
@@ -148,8 +237,8 @@ pub fn serve_vsock_one_with_opts(
     opts: &ServeOpts,
 ) -> Result<ResultMessage, ListenError> {
     let listen_path = PathBuf::from(format!("{}_{port}", vsock_base.display()));
-    let deadline = std::time::Instant::now() + timeout;
-    while !vsock_base.exists() && std::time::Instant::now() < deadline {
+    let deadline = Instant::now() + timeout;
+    while !vsock_base.exists() && Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     if !vsock_base.exists() {
@@ -172,10 +261,15 @@ pub fn serve_vsock_one_with_opts(
             report.seccomp_deny_exec, report.seccomp_deny_dangerous, report.seccomp_allowlist, report.seccomp_prot_exec_filter, report.rlimit_core_zero, report.cgroup_jail, report.landlock
         );
     }
-    let (mut stream, _) = listener.accept()?;
-    let msg = accept_one_result_logged(&mut stream, mode, opts.reject_log.as_ref())?;
-    let _ = stream.write_all(b"ACK\n");
+    let stream = accept_until(&listener, deadline);
     let _ = fs::remove_file(&listen_path);
+    let mut stream = stream?;
+    let msg = accept_one_result_logged(
+        &mut DeadlineStream::new(&mut stream, deadline),
+        mode,
+        opts.reject_log.as_ref(),
+    )?;
+    let _ = stream.write_all(b"ACK\n");
     Ok(msg)
 }
 

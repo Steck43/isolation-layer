@@ -8,11 +8,15 @@ false.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
 import subprocess
+import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +90,11 @@ def accept_bound_receipt(
     content_hash: str,
     seen_ids: set[str],
 ) -> bool:
-    """Deny fake shapes, replays, and receipts bound to a different call id."""
+    """Deny fake shapes, replays, and receipts bound to a different call id.
+
+    The receipt id and the box ticket are each spent once: a receipt that
+    reuses either one is refused, and both are added to ``seen_ids``.
+    """
     if not call_id or not ticket or not _is_sha256_hex(call_digest):
         return False
     if not _is_sha256_hex(content_hash):
@@ -108,9 +116,10 @@ def accept_bound_receipt(
     receipt_id = _get(receipt, "receipt_id")
     if not isinstance(receipt_id, str) or not receipt_id:
         return False
-    if receipt_id in seen_ids:
+    keys = (f"receipt:{receipt_id}", f"ticket:{_sha256_text(ticket)}")
+    if any(key in seen_ids for key in keys):
         return False
-    seen_ids.add(receipt_id)
+    seen_ids.update(keys)
     return True
 
 
@@ -186,10 +195,7 @@ def invoke_live_prove(
 
     isolation_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    chain = env.get(
-        "AEGIS_DECISION_CHAIN",
-        "/var/lib/isolation-manager/decision-chain.jsonl",
-    )
+    chain = env.get("AEGIS_DECISION_CHAIN", _DEFAULT_CHAIN)
     Path(chain).parent.mkdir(parents=True, exist_ok=True)
     env["AEGIS_DECISION_CHAIN"] = chain
     helper = "/usr/local/bin/jailer-launch"
@@ -247,6 +253,96 @@ def invoke_live_prove(
     return receipt
 
 
+# Spent receipt ids and box tickets live in a file beside the decision chain,
+# so a replay is refused across calls, threads, processes and restarts. An
+# entry expires BOX_TICKET_LIFETIME_S after its first use; atoms mints the
+# ticket with no issue time, so the lifetime counts from first use.
+BOX_TICKET_LIFETIME_S = 24 * 60 * 60
+_SPENT_NAME = "box-entry-spent.jsonl"
+_DEFAULT_CHAIN = "/var/lib/isolation-manager/decision-chain.jsonl"
+# The set type that holds live keys while the store is locked.
+_SpentKeys = set
+
+
+def _spent_store_path() -> Path:
+    chain = os.environ.get("AEGIS_DECISION_CHAIN", _DEFAULT_CHAIN)
+    return Path(chain).parent / _SPENT_NAME
+
+
+def _replace_store(path: Path, rows: list[tuple[str, float]]) -> None:
+    """Swap in the pruned rows; on any error the old store stays in place."""
+    tmp = path.with_name(path.name + ".tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    try:
+        with os.fdopen(os.open(tmp, flags, 0o600), "w", encoding="utf-8") as out:
+            for key, exp in rows:
+                out.write(json.dumps({"key": key, "exp": exp}) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+@contextlib.contextmanager
+def _spent_keys() -> Iterator[set[str]]:
+    """Yield the unexpired spent keys under an exclusive lock, then record new ones.
+
+    The lock lives on a separate file so a prune can replace the store whole.
+    Raises OSError when the store cannot be opened or written, and ValueError
+    on a row it cannot read; the caller refuses the call in both cases.
+    """
+    path = _spent_store_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(path.name + ".lock")
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "r+", encoding="utf-8") as fh:
+            now = time.time()
+            live: dict[str, float] = {}
+            pruned = False
+            for line in fh:
+                row = json.loads(line)
+                key, exp = row["key"], float(row["exp"])
+                if not isinstance(key, str):
+                    raise TypeError("spent store row without a string key")
+                if exp > now:
+                    live[key] = exp
+                else:
+                    pruned = True
+            seen = _SpentKeys(live)
+            yield seen
+            exp_new = now + BOX_TICKET_LIFETIME_S
+            new = [key for key in seen if key not in live]
+            if pruned:
+                _replace_store(path, [*live.items(), *((k, exp_new) for k in new)])
+                return
+            fh.seek(0, os.SEEK_END)
+            for key in new:
+                fh.write(json.dumps({"key": key, "exp": exp_new}) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    finally:
+        os.close(lock_fd)
+
+
+def _accept_once(receipt: dict[str, Any], **bind: Any) -> bool:
+    try:
+        with _spent_keys() as seen:
+            return accept_bound_receipt(receipt, seen_ids=seen, **bind)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
 def run(
     *,
     atoms_result: Any,
@@ -271,7 +367,6 @@ def run(
     gate_sha = _gate_decision_sha256(decision)
     atoms_sha = _atoms_result_sha256(atoms_result)
     content_hash = _sha256_text(content)
-    seen: set[str] = set()
     live = os.environ.get("BOX_LIVE_PROVE") == "1"
 
     if live:
@@ -286,7 +381,8 @@ def run(
         except RuntimeError:
             return None
         receipt = dict(live_receipt)
-        receipt["receipt_id"] = receipt.get("receipt_id") or uuid.uuid4().hex
+        # Real prove prints no receipt_id; its jail id names the run.
+        receipt["receipt_id"] = receipt.get("receipt_id") or receipt.get("jail_id")
         receipt["call_digest"] = call_digest
         receipt["ticket_digest"] = _sha256_text(ticket)
         # Live prove's dropbox is the jailer workload hash (caller-echo bind of
@@ -295,16 +391,14 @@ def run(
         drop = receipt.get("dropbox_hash")
         if not _is_sha256_hex(drop):
             return None
-        if not accept_bound_receipt(
+        accepted = _accept_once(
             receipt,
             call_id=tool_call_id,
             ticket=ticket,
             call_digest=call_digest,
             content_hash=str(drop),
-            seen_ids=seen,
-        ):
-            return None
-        return receipt
+        )
+        return receipt if accepted else None
 
     call_id = tool_call_id or f"{getattr(decision, 'skill', '*')}:{tool}:{path}"
     receipt_id = uuid.uuid4().hex
@@ -328,13 +422,11 @@ def run(
         "gate_decision_sha256": gate_sha,
         "atoms_result_sha256": atoms_sha,
     }
-    if not accept_bound_receipt(
+    accepted = _accept_once(
         receipt,
         call_id=call_id,
         ticket=ticket,
         call_digest=call_digest,
         content_hash=content_hash,
-        seen_ids=seen,
-    ):
-        return None
-    return receipt
+    )
+    return receipt if accepted else None

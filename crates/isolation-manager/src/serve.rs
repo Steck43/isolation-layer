@@ -19,6 +19,7 @@ use aegis_common::{default_chain_path, DecisionChain};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::launch::fresh_jail_id;
 use crate::prove;
 use crate::ProveArgs;
 
@@ -134,8 +135,11 @@ fn handle_conn(mut stream: UnixStream, require_ancestor: Option<String>, allow_g
     let tip_before = DecisionChain::open(default_chain_path())
         .tip_hash()
         .unwrap_or_default();
+    // Resolve the jail id here so the reply names this request's jail, not
+    // whatever row a parallel call appended last.
+    let jail_id = req.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
     let code = prove::run(ProveArgs {
-        jail_id: req.jail_id.clone(),
+        jail_id: Some(jail_id.clone()),
         session_id: req.session_id,
         tool_call_id: req.tool_call_id,
         gate_decision_sha256: req.gate_decision_sha256,
@@ -145,11 +149,13 @@ fn handle_conn(mut stream: UnixStream, require_ancestor: Option<String>, allow_g
     });
     let chain = DecisionChain::open(default_chain_path());
     let tip = chain.tip_hash().ok();
-    let jail_id = chain
-        .read_all()
-        .ok()
-        .and_then(|rows| rows.last().map(|r| r.jail_id.clone()));
-    let grew = tip.as_ref().map(|t| t.as_str() != tip_before).unwrap_or(false);
+    let grew = tip
+        .as_ref()
+        .map(|t| t.as_str() != tip_before)
+        .unwrap_or(false);
+    // `jail_id` names the requested or assigned id for this call. It is not
+    // proof that a jail ran: prove can refuse before it appends any row, and
+    // the reply still names the id. Read `ok` and the chain for what happened.
     let body = json!({
         "ok": code == 0,
         "exit": code,

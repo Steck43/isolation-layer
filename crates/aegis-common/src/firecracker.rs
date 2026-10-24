@@ -128,21 +128,82 @@ pub fn vsock_roundtrip(vsock_base: &Path, port: u16, timeout: Duration) -> Resul
     }
 
     let listener = UnixListener::bind(&listen_path)?;
-    listener.set_nonblocking(false)?;
-    let (mut conn, _) = listener.accept()?;
-    let mut data = Vec::new();
-    conn.read_to_end(&mut data)?;
+    let got = accept_and_read_until(&listener, deadline);
+    let _ = fs::remove_file(&listen_path);
+    let (mut conn, data) = got?;
     // Guest may close after send; pong write-back is best-effort.
     let _ = conn.write_all(b"pong:");
     let _ = conn.write_all(&data);
     let _ = conn.shutdown(Shutdown::Write);
-    let _ = fs::remove_file(&listen_path);
     if data.is_empty() {
         return Err(FcError::Request(
             "vsock roundtrip received empty payload".into(),
         ));
     }
     Ok(String::from_utf8_lossy(&data).into_owned())
+}
+
+fn roundtrip_timed_out(msg: &str) -> FcError {
+    FcError::Io(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!("timed out: {msg}"),
+    ))
+}
+
+/// Accept one guest connection and read it to EOF, all before `deadline`.
+/// The accept polls a nonblocking listener; each read gets the time left as
+/// its socket timeout, so a guest that never connects, never closes, or drips
+/// bytes ends in `TimedOut`.
+fn accept_and_read_until(
+    listener: &std::os::unix::net::UnixListener,
+    deadline: std::time::Instant,
+) -> Result<(std::os::unix::net::UnixStream, Vec<u8>), FcError> {
+    use std::io::ErrorKind;
+    use std::time::Instant;
+
+    listener.set_nonblocking(true)?;
+    let mut conn = loop {
+        match listener.accept() {
+            Ok((c, _)) => break c,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(roundtrip_timed_out(
+                        "no guest connected before the deadline",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
+    conn.set_nonblocking(false)?;
+    let mut data = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(roundtrip_timed_out(
+                "guest did not close before the deadline",
+            ));
+        }
+        conn.set_read_timeout(Some(left))?;
+        match conn.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                return Err(roundtrip_timed_out(
+                    "guest did not close before the deadline",
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    let left = deadline
+        .saturating_duration_since(Instant::now())
+        .max(Duration::from_millis(1));
+    conn.set_write_timeout(Some(left))?;
+    Ok((conn, data))
 }
 
 pub const BOOT_PATTERNS: &[&str] = &[

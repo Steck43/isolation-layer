@@ -17,6 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "scripts" / "box_entry.py"
 
 
+@pytest.fixture(autouse=True)
+def _chain_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # box_entry records spent tickets beside the decision chain.
+    monkeypatch.setenv("AEGIS_DECISION_CHAIN", str(tmp_path / "decision-chain.jsonl"))
+
+
 def _load():
     spec = importlib.util.spec_from_file_location("box_entry_step12", ENTRY)
     assert spec and spec.loader

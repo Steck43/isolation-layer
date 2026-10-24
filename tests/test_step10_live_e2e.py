@@ -40,8 +40,12 @@ def _sibling(name: str) -> Path | None:
     return cand if cand.is_dir() else None
 
 
-def test_harness_digests_come_from_real_gate_and_atoms(tmp_path: Path) -> None:
+def test_harness_digests_come_from_real_gate_and_atoms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Failing first: stub raises; after wire, digests match recomputation."""
+    # box_entry records spent tickets beside the decision chain.
+    monkeypatch.setenv("AEGIS_DECISION_CHAIN", str(tmp_path / "decision-chain.jsonl"))
     gate_root = _sibling("capability-gate")
     atoms_root = _sibling("aegis-atoms")
     if gate_root is None or atoms_root is None:
