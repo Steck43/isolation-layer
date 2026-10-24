@@ -420,3 +420,61 @@ def test_a_symlinked_store_or_lock_is_refused(tmp_path, which) -> None:
     assert be.run(**_call(f"t-link-{which}")) is None
     assert victim.read_text() == ""
     assert link.is_symlink()
+
+
+# Failure class: the prune wrote through a fixed temp name opened with
+# O_TRUNC, so a file planted at that name was truncated (a hard link to the
+# chain), refused the prune (a symlink), or hung it under the lock (a FIFO).
+
+
+@pytest.mark.parametrize("plant", ["hardlink", "symlink"])
+def test_a_file_planted_at_the_old_temp_name_is_left_alone(tmp_path, plant) -> None:
+    import os
+
+    be = _load(f"box_entry_replay_plant_{plant}")
+    store = _seed_store(be, ["t-plant-live"])
+    victim = tmp_path / "decision-chain.jsonl"
+    victim.write_text('{"row": 1}\n')
+    planted = store.with_name(store.name + ".tmp")
+    if plant == "hardlink":
+        os.link(victim, planted)
+    else:
+        planted.symlink_to(victim)
+    assert be.run(**_call("t-plant-new")) is not None  # the prune ran and landed
+    assert victim.read_text() == '{"row": 1}\n'
+    assert os.path.lexists(planted) and os.path.samefile(planted, victim)
+    assert "ticket:expired" not in _store_keys(store)
+    assert be.run(**_call("t-plant-live")) is None
+    assert not list(store.parent.glob(store.name + ".*.tmp"))
+
+
+def _prune_once(chain: str, out) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_fifo_{os.getpid()}")
+    out.put(be.run(**_call("t-fifo-new")) is not None)
+
+
+def test_a_fifo_planted_at_the_old_temp_name_does_not_hang_the_prune() -> None:
+    import os
+
+    be = _load("box_entry_replay_plant_fifo")
+    store = _seed_store(be, ["t-fifo-live"])
+    planted = store.with_name(store.name + ".tmp")
+    os.mkfifo(planted)
+    ctx = multiprocessing.get_context("fork")
+    out = ctx.Queue()
+    child = ctx.Process(
+        target=_prune_once, args=(os.environ["AEGIS_DECISION_CHAIN"], out)
+    )
+    child.start()
+    child.join(timeout=10)
+    hung = child.is_alive()
+    if hung:
+        child.kill()
+        child.join(timeout=10)
+    assert not hung, "the prune blocked on the planted FIFO with the lock held"
+    assert out.get(timeout=5) is True
+    assert "ticket:expired" not in _store_keys(store)
+    assert be.run(**_call("t-fifo-live")) is None
