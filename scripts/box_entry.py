@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -247,6 +248,12 @@ def invoke_live_prove(
     return receipt
 
 
+# Receipt ids already accepted by this process. A set built inside run() starts
+# empty on every call, so a replayed live receipt would pass each time.
+_SEEN_RECEIPT_IDS: set[str] = set()
+_SEEN_LOCK = threading.Lock()
+
+
 def run(
     *,
     atoms_result: Any,
@@ -271,7 +278,7 @@ def run(
     gate_sha = _gate_decision_sha256(decision)
     atoms_sha = _atoms_result_sha256(atoms_result)
     content_hash = _sha256_text(content)
-    seen: set[str] = set()
+    seen = _SEEN_RECEIPT_IDS
     live = os.environ.get("BOX_LIVE_PROVE") == "1"
 
     if live:
@@ -295,16 +302,16 @@ def run(
         drop = receipt.get("dropbox_hash")
         if not _is_sha256_hex(drop):
             return None
-        if not accept_bound_receipt(
-            receipt,
-            call_id=tool_call_id,
-            ticket=ticket,
-            call_digest=call_digest,
-            content_hash=str(drop),
-            seen_ids=seen,
-        ):
-            return None
-        return receipt
+        with _SEEN_LOCK:
+            accepted = accept_bound_receipt(
+                receipt,
+                call_id=tool_call_id,
+                ticket=ticket,
+                call_digest=call_digest,
+                content_hash=str(drop),
+                seen_ids=seen,
+            )
+        return receipt if accepted else None
 
     call_id = tool_call_id or f"{getattr(decision, 'skill', '*')}:{tool}:{path}"
     receipt_id = uuid.uuid4().hex
@@ -328,13 +335,13 @@ def run(
         "gate_decision_sha256": gate_sha,
         "atoms_result_sha256": atoms_sha,
     }
-    if not accept_bound_receipt(
-        receipt,
-        call_id=call_id,
-        ticket=ticket,
-        call_digest=call_digest,
-        content_hash=content_hash,
-        seen_ids=seen,
-    ):
-        return None
-    return receipt
+    with _SEEN_LOCK:
+        accepted = accept_bound_receipt(
+            receipt,
+            call_id=call_id,
+            ticket=ticket,
+            call_digest=call_digest,
+            content_hash=content_hash,
+            seen_ids=seen,
+        )
+    return receipt if accepted else None
