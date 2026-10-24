@@ -126,3 +126,19 @@ fn stable_masks_only_the_scratch_path_and_standalone_64_hex() {
         assert_eq!(stable(&t, w), t);
     }
 }
+
+#[test]
+fn an_empty_expect_block_is_an_error() {
+    let mut s = scn("SB1-sandbox-lifecycle");
+    s["expect"] = serde_json::json!({});
+    assert!(run_scenario(&s, None, Mutations::default()).is_err());
+}
+
+#[test]
+fn zero_scenarios_is_exit_2() {
+    let empty = std::env::temp_dir().join(format!("sbd-empty-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    let st = std::process::Command::new(env!("CARGO_BIN_EXE_sandbox-demo")).args(["run", empty.to_str().unwrap(), "--out", empty.join("out").to_str().unwrap()]).status().unwrap();
+    let _ = std::fs::remove_dir_all(&empty);
+    assert_eq!(st.code(), Some(2));
+}
