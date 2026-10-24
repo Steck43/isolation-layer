@@ -334,3 +334,147 @@ def test_a_kill_mid_prune_keeps_the_spent_rows() -> None:
     assert child.exitcode == -signal.SIGKILL
     assert len(store.read_text().splitlines()) == before
     assert be.run(**_call("t-kill-live")) is None
+
+
+# Failure class: a spender that opens the store before it holds the lock, or
+# that locks the store file itself, keeps the inode a concurrent prune then
+# replaces, reads the rows from before that prune, and accepts a ticket the
+# pruner has just spent.
+
+
+def _prune_and_hold(chain: str, holding, go, out) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_pruner_{os.getpid()}")
+
+    class _HoldUnderLock(set):
+        # The pruner stops here with the lock held and the store read, until
+        # the parent has seen the spender reach its own lock call.
+        def __contains__(self, key) -> bool:
+            holding.set()
+            go.wait(30)
+            return super().__contains__(key)
+
+    be._SpentKeys = _HoldUnderLock
+    out.put(("pruner", be.run(**_call("t-race")) is not None))
+
+
+def _spend_behind_the_pruner(chain: str, at_lock, out) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_spender_{os.getpid()}")
+    real = be.fcntl
+
+    class _SignalAtLock:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        @staticmethod
+        def flock(fd, op):
+            at_lock.set()
+            return real.flock(fd, op)
+
+    be.fcntl = _SignalAtLock()
+    out.put(("spender", be.run(**_call("t-race")) is not None))
+
+
+def test_a_spender_behind_a_prune_reads_the_store_the_prune_wrote() -> None:
+    import os
+
+    be = _load("box_entry_replay_lock_order")
+    store = _seed_store(be, [])  # one expired row, so the pruner replaces the store
+    chain = os.environ["AEGIS_DECISION_CHAIN"]
+    ctx = multiprocessing.get_context("fork")
+    holding, go, at_lock = ctx.Event(), ctx.Event(), ctx.Event()
+    out = ctx.Queue()
+    pruner = ctx.Process(target=_prune_and_hold, args=(chain, holding, go, out))
+    pruner.start()
+    assert holding.wait(timeout=30), "pruner never held the lock"
+    spender = ctx.Process(target=_spend_behind_the_pruner, args=(chain, at_lock, out))
+    spender.start()
+    assert at_lock.wait(timeout=30), "spender never reached its lock call"
+    go.set()
+    got = dict(out.get(timeout=30) for _ in range(2))
+    pruner.join(timeout=30)
+    spender.join(timeout=30)
+    assert got == {"pruner": True, "spender": False}
+    assert "ticket:" + be._sha256_text("t-race") in _store_keys(store)
+
+
+# Failure class: the store or its lock opened through a symlink writes spent
+# rows into, or locks, whatever file the link names.
+
+
+@pytest.mark.parametrize("which", ["store", "lock"])
+def test_a_symlinked_store_or_lock_is_refused(tmp_path, which) -> None:
+    be = _load(f"box_entry_replay_link_{which}")
+    store = be._spent_store_path()
+    store.parent.mkdir(parents=True, exist_ok=True)
+    victim = tmp_path / "elsewhere" / "victim"
+    victim.parent.mkdir()
+    victim.write_text("")
+    link = store if which == "store" else store.with_name(store.name + ".lock")
+    link.symlink_to(victim)
+    assert be.run(**_call(f"t-link-{which}")) is None
+    assert victim.read_text() == ""
+    assert link.is_symlink()
+
+
+# Failure class: the prune wrote through a fixed temp name opened with
+# O_TRUNC, so a file planted at that name was truncated (a hard link to the
+# chain), refused the prune (a symlink), or hung it under the lock (a FIFO).
+
+
+@pytest.mark.parametrize("plant", ["hardlink", "symlink"])
+def test_a_file_planted_at_the_old_temp_name_is_left_alone(tmp_path, plant) -> None:
+    import os
+
+    be = _load(f"box_entry_replay_plant_{plant}")
+    store = _seed_store(be, ["t-plant-live"])
+    victim = tmp_path / "decision-chain.jsonl"
+    victim.write_text('{"row": 1}\n')
+    planted = store.with_name(store.name + ".tmp")
+    if plant == "hardlink":
+        os.link(victim, planted)
+    else:
+        planted.symlink_to(victim)
+    assert be.run(**_call("t-plant-new")) is not None  # the prune ran and landed
+    assert victim.read_text() == '{"row": 1}\n'
+    assert os.path.lexists(planted) and os.path.samefile(planted, victim)
+    assert "ticket:expired" not in _store_keys(store)
+    assert be.run(**_call("t-plant-live")) is None
+    assert not list(store.parent.glob(store.name + ".*.tmp"))
+
+
+def _prune_once(chain: str, out) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_fifo_{os.getpid()}")
+    out.put(be.run(**_call("t-fifo-new")) is not None)
+
+
+def test_a_fifo_planted_at_the_old_temp_name_does_not_hang_the_prune() -> None:
+    import os
+
+    be = _load("box_entry_replay_plant_fifo")
+    store = _seed_store(be, ["t-fifo-live"])
+    planted = store.with_name(store.name + ".tmp")
+    os.mkfifo(planted)
+    ctx = multiprocessing.get_context("fork")
+    out = ctx.Queue()
+    child = ctx.Process(
+        target=_prune_once, args=(os.environ["AEGIS_DECISION_CHAIN"], out)
+    )
+    child.start()
+    child.join(timeout=10)
+    hung = child.is_alive()
+    if hung:
+        child.kill()
+        child.join(timeout=10)
+    assert not hung, "the prune blocked on the planted FIFO with the lock held"
+    assert out.get(timeout=5) is True
+    assert "ticket:expired" not in _store_keys(store)
+    assert be.run(**_call("t-fifo-live")) is None
