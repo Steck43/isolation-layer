@@ -155,18 +155,27 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: false
       # cargo and rustfmt come with the ubuntu-latest image; no toolchain action.
       - name: toolchain
         run: cargo --version && rustfmt --version
       # Older demo files and crates/ predate this check, so it names the route
-      # door files; widen the list as other files are formatted.
-      - name: rustfmt --check (route door files)
-        run: >-
-          rustfmt --check --edition 2021
-          demos/sandbox-demo/src/route.rs
-          demos/sandbox-demo/tests/route.rs
-          demos/sandbox-demo/tests/route_mutation.rs
+      # door files and main.rs, plus every .rs file the change adds; widen the
+      # list as other files are formatted.
+      - name: rustfmt --check (route door files and every added .rs file)
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          BASE="${PR_BASE:-$(git rev-parse HEAD~1)}"
+          mapfile -t ADDED < <(git diff --name-only --diff-filter=A "$BASE" HEAD -- '*.rs')
+          rustfmt --check --edition 2021 \
+            demos/sandbox-demo/src/main.rs \
+            demos/sandbox-demo/src/route.rs \
+            demos/sandbox-demo/tests/route.rs \
+            demos/sandbox-demo/tests/route_mutation.rs \
+            "${ADDED[@]}"
       # The demo crate is its own workspace, so cargo test --workspace skips it.
       - name: sandbox-demo tests
         run: make demo-test
