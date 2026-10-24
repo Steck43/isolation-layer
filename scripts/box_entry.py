@@ -13,6 +13,8 @@ import fcntl
 import hashlib
 import json
 import os
+import re
+import stat
 import subprocess
 import tempfile
 import time
@@ -270,6 +272,39 @@ def _spent_store_path() -> Path:
     return Path(chain).parent / _SPENT_NAME
 
 
+# mkstemp names a prune temp file prefix + 8 characters from this set + suffix.
+_TEMP_TAIL = re.compile(r"\.[a-z0-9_]{8}\.tmp")
+
+
+def _sweep_temps(path: Path) -> None:
+    """Remove the temp files a killed prune left beside the store.
+
+    Called with the store lock held, so no running prune owns one. A name is
+    removed when it is the store name plus the exact mkstemp tail and, read
+    with lstat, it is a regular file with one link owned by this user. A
+    symlink, a hard link, a FIFO, a folder or a look-alike name stays.
+    """
+    prefix = path.name
+    uid = os.geteuid()
+    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for name in os.listdir(dir_fd):
+            if not name.startswith(prefix):
+                continue
+            if not _TEMP_TAIL.fullmatch(name, len(prefix)):
+                continue
+            try:
+                st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_uid != uid:
+                continue
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(name, dir_fd=dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 def _replace_store(path: Path, rows: list[tuple[str, float]]) -> None:
     """Swap in the pruned rows; on any error the old store stays in place."""
     # mkstemp picks an unused name and opens it O_EXCL at 0600, so a file
@@ -327,6 +362,7 @@ def _spent_keys() -> Iterator[set[str]]:
             exp_new = now + BOX_TICKET_LIFETIME_S
             new = [key for key in seen if key not in live]
             if pruned:
+                _sweep_temps(path)
                 _replace_store(path, [*live.items(), *((k, exp_new) for k in new)])
                 return
             fh.seek(0, os.SEEK_END)

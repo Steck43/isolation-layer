@@ -478,3 +478,144 @@ def test_a_fifo_planted_at_the_old_temp_name_does_not_hang_the_prune() -> None:
     assert out.get(timeout=5) is True
     assert "ticket:expired" not in _store_keys(store)
     assert be.run(**_call("t-fifo-live")) is None
+
+
+# Failure class: a prune killed after mkstemp leaves its temp file beside the
+# store. Nothing reads it, but each kill leaves one more, up to a store in
+# size, so repeated kills fill the disk.
+
+
+def _leftover_temps(store: Path) -> list[Path]:
+    return sorted(store.parent.glob(store.name + ".*.tmp"))
+
+
+def test_the_next_prune_removes_a_temp_file_a_killed_prune_left() -> None:
+    import os
+    import signal
+
+    be = _load("box_entry_replay_sweep_kill")
+    store = _seed_store(be, ["t-sweep-live"], filler=200)
+    ctx = multiprocessing.get_context("fork")
+    ready = ctx.Event()
+    child = ctx.Process(
+        target=_prune_then_hang, args=(os.environ["AEGIS_DECISION_CHAIN"], ready)
+    )
+    child.start()
+    assert ready.wait(timeout=30), "child never reached the prune write"
+    os.kill(child.pid, signal.SIGKILL)
+    child.join(timeout=30)
+    assert len(_leftover_temps(store)) == 1  # the killed prune's temp file
+    # The expired row is still in the store, so this call prunes again.
+    assert be.run(**_call("t-sweep-next")) is not None
+    assert "ticket:expired" not in _store_keys(store)
+    assert _leftover_temps(store) == []
+    assert be.run(**_call("t-sweep-live")) is None
+
+
+def test_a_failed_prune_unlinks_its_temp_file() -> None:
+    import resource
+    import signal
+
+    be = _load("box_entry_replay_prune_unlink")
+    store = _seed_store(be, ["t-unlink-live"])
+    old = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (0, hard))
+    try:
+        assert be.run(**_call("t-unlink-new")) is None
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+        signal.signal(signal.SIGXFSZ, old)
+    # Checked before any other call, so a later prune cannot have swept it.
+    assert _leftover_temps(store) == []
+
+
+# Failure class: a sweep that matched a loose pattern, followed a symlink or
+# took any file type would remove, or act through, a file it did not create.
+
+
+def _plant_beside(store: Path, victim: Path, target: Path) -> dict[str, Path]:
+    import os
+
+    d, n = store.parent, store.name
+    planted = {
+        "short": d / f"{n}.abcdefg.tmp",
+        "long": d / f"{n}.abcdefghi.tmp",
+        "upper": d / f"{n}.ABCDEFGH.tmp",
+        "dash": d / f"{n}.abcd-fgh.tmp",
+        "fixed": d / f"{n}.tmp",
+        "trailer": d / f"{n}.abcdefgh.tmp.bak",
+        "prefixed": d / f"x{n}.abcdefgh.tmp",
+        "other": d / "other.jsonl.abcdefgh.tmp",
+    }
+    for p in planted.values():
+        p.write_text("planted\n")
+    links = {
+        "symlink": d / f"{n}.lnk00000.tmp",
+        "dangling": d / f"{n}.dng00000.tmp",
+        "hardlink": d / f"{n}.hrd00000.tmp",
+        "dir": d / f"{n}.dir00000.tmp",
+        "fifo": d / f"{n}.ffo00000.tmp",
+    }
+    links["symlink"].symlink_to(target)  # a regular file with one link
+    links["dangling"].symlink_to(d / "no-such-file")
+    os.link(victim, links["hardlink"])
+    links["dir"].mkdir()
+    os.mkfifo(links["fifo"])
+    return {**planted, **links}
+
+
+def _prune_in_child(chain: str, out) -> None:
+    import os
+
+    os.environ["AEGIS_DECISION_CHAIN"] = chain
+    be = _load(f"box_entry_replay_sweep_child_{os.getpid()}")
+    out.put(be.run(**_call("t-alike-new")) is not None)
+
+
+def test_the_sweep_leaves_look_alike_names_links_and_other_types_alone(
+    tmp_path,
+) -> None:
+    import os
+
+    be = _load("box_entry_replay_sweep_alike")
+    store = _seed_store(be, ["t-alike-live"])
+    victim = tmp_path / "victim.jsonl"
+    victim.write_text('{"row": 1}\n')
+    target = tmp_path / "target.jsonl"
+    target.write_text('{"row": 2}\n')
+    planted = _plant_beside(store, victim, target)
+    ctx = multiprocessing.get_context("fork")
+    out = ctx.Queue()
+    child = ctx.Process(
+        target=_prune_in_child, args=(os.environ["AEGIS_DECISION_CHAIN"], out)
+    )
+    child.start()
+    child.join(timeout=10)
+    hung = child.is_alive()
+    if hung:
+        child.kill()
+        child.join(timeout=10)
+    assert not hung, "the sweep blocked on a planted FIFO with the lock held"
+    assert out.get(timeout=5) is True
+    assert "ticket:expired" not in _store_keys(store)  # the prune ran
+    gone = sorted(k for k, p in planted.items() if not os.path.lexists(p))
+    assert gone == []
+    assert victim.read_text() == '{"row": 1}\n'
+    assert target.read_text() == '{"row": 2}\n'
+    assert be.run(**_call("t-alike-live")) is None
+
+
+def test_the_sweep_leaves_a_temp_file_owned_by_another_user(monkeypatch) -> None:
+    import os
+
+    be = _load("box_entry_replay_sweep_owner")
+    store = _seed_store(be, ["t-owner-live"])
+    leftover = store.with_name(store.name + ".own00000.tmp")
+    leftover.write_text("planted\n")
+    real_uid = os.geteuid()
+    # Seen from another uid, every file in the folder belongs to someone else.
+    monkeypatch.setattr(be.os, "geteuid", lambda: real_uid + 1)
+    assert be.run(**_call("t-owner-new")) is not None
+    assert "ticket:expired" not in _store_keys(store)
+    assert leftover.exists()
