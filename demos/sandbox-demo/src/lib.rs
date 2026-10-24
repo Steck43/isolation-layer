@@ -225,7 +225,12 @@ pub fn run_scenario(scn: &Value, seed: Option<u64>, m: Mutations) -> Result<Scen
     let _ = fs::remove_dir_all(&work);
     let out = out?;
     let mut checks = Vec::new();
-    for (k, v) in scn["expect"].as_object().ok_or("expect must be a mapping")? {
+    let expect = scn["expect"].as_object().ok_or("expect must be a mapping")?;
+    if expect.is_empty() {
+        // An empty expect block asserts nothing, so it would always PASS.
+        return Err(format!("{name}: expect must name at least one count"));
+    }
+    for (k, v) in expect {
         let expected = eval_expr(v, &names)?;
         let actual = *out
             .actual

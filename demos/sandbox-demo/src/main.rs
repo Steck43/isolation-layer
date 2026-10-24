@@ -33,6 +33,11 @@ fn main() {
         eprintln!("{e}");
         exit(2)
     });
+    if scenarios.is_empty() {
+        // Zero scenarios would report fail 0 over nothing.
+        eprintln!("no scenario files in {}", dir.display());
+        exit(2);
+    }
     let mut results = Vec::new();
     for scn in &scenarios {
         match run_scenario(scn, None, Mutations::default()) {
