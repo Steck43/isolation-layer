@@ -755,7 +755,7 @@ pub fn not_supported() -> Value {
 pub fn blockers() -> Value {
     json!([{
         "id": "BLOCKER-kvm",
-        "what": "S07 and SB1 run on a stub VM (real: false).",
+        "what": "S07, SB1 and the route door (sandbox-demo route) run on a stub VM (real: false).",
         "why": "Firecracker v1.17.0 with the stock quickstart kernel and rootfs segfaults at vCPU creation on the dev host; dmesg shows kernel BUG at arch/x86/kvm/x86.c:702 in kvm_arch_vcpu_create (nested virtualization).",
         "needs": "A host where KVM_CREATE_VCPU works (bare metal, or a nested setup with a working KVM), /dev/kvm access for the runner via sudo or the kvm group set up by the operator, the golden kernel and rootfs at the paths in aegis-common/src/paths.rs, and jailer-launch installed. Then the same scenarios can drive isolation-manager instead of the stub."
     }])

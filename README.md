@@ -84,9 +84,9 @@ Counts from the same run (`actual` in out/summary.json):
 These are listed in `not_supported` and `blockers` in `out/summary.json` and
 are not claimed here:
 
-- A real microVM boot. S07 and SB1 run on a stub VM host. On the dev host,
-  Firecracker hits a host kernel bug at vCPU creation under nested
-  virtualization. A real boot needs a host where KVM vCPU creation works,
+- A real microVM boot. S07, SB1 and the route door run on a stub VM host. On
+  the dev host, Firecracker hits a host kernel bug at vCPU creation under
+  nested virtualization. A real boot needs a host where KVM vCPU creation works,
   `/dev/kvm` access set up by the operator, the golden kernel and rootfs, and
   `jailer-launch` installed.
 - The handoff from capability-gate into this layer: not wired. The gate's

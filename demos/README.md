@@ -18,7 +18,7 @@ scratch folder under the temp dir and removes it.
 | S07 vestibule schema violation | schema checks and reject log on the host listener; planted frames never reach the shelf | STUBBED (no VM; a host thread plays the guest over a real unix socket) |
 | SB1 sandbox lifecycle | launch, vestibule, shelf, stage, verdict, disposition, teardown, residue probe, decision chain | STUBBED (stub VM host) |
 | S08-iso decision chain tamper | edit, delete and torn tail are detected with the row index; a torn tail blocks the next append | REAL (needs no VM) |
-| route door (`sandbox-demo route`) | one gate task in, one bound receipt out: fresh jail id, vestibule in enforce mode, shelf, stage, verdict, teardown, hygiene and chain rows per task | STUBBED (stub VM host; every receipt carries `real: false` and `mode: STUBBED`) |
+| route door (`sandbox-demo route`) | one gate task in, one bound receipt out: fresh jail id, vestibule in enforce mode, shelf, stage, verdict, teardown, hygiene and chain rows per task | STUBBED, BLOCKER-kvm (stub VM host; every receipt carries `real: false` and `mode: STUBBED`) |
 
 ## The route door
 
@@ -45,8 +45,9 @@ microVM, is held for a later change. `cargo test --test route --test
 route_mutation` in `demos/sandbox-demo` runs the door tests and the mutation
 checks.
 
-STUBBED rows have `real: false` in `out/summary.json`, which also carries the
-BLOCKER for a real boot and the list of scenarios this repo cannot run yet.
+STUBBED scenario rows have `real: false` in `out/summary.json`, and route door
+receipts carry `real: false`. summary.json also carries BLOCKER-kvm, which
+covers both, for a real boot and the list of scenarios this repo cannot run yet.
 
 Known gaps, measured and not asserted: a
 chain cut cleanly after a full row still verifies, and `append` does not verify
