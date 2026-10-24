@@ -162,13 +162,19 @@ jobs:
         run: cargo --version && rustfmt --version
       # Older demo files and crates/ predate this check, so it names the route
       # door files and main.rs, plus every .rs file the change adds; widen the
-      # list as other files are formatted.
+      # list as other files are formatted. On a push the base is the pushed
+      # range's before sha, so a file added early in a multi commit push is
+      # still checked. Renamed files are not counted as added, and there is no
+      # merge_group trigger.
       - name: rustfmt --check (route door files and every added .rs file)
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          BASE="${PR_BASE:-$(git rev-parse HEAD~1)}"
+          BASE="$PR_BASE"
+          if [ -z "$BASE" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then BASE="$PUSH_BEFORE"; fi
+          BASE="${BASE:-$(git rev-parse HEAD~1)}"
           mapfile -t ADDED < <(git diff --name-only --diff-filter=A "$BASE" HEAD -- '*.rs')
           rustfmt --check --edition 2021 \
             demos/sandbox-demo/src/main.rs \
