@@ -339,3 +339,25 @@ fn resolve_helper_path() -> PathBuf {
     }
     installed
 }
+
+#[cfg(test)]
+mod jail_id_tests {
+    use super::*;
+
+    #[test]
+    fn two_ids_minted_at_the_same_instant_differ() {
+        // serve mints ids in parallel threads of one pid, so the clock alone
+        // does not make them unique.
+        let a = jail_id_at("mgr", 1_700_000_000_000_000_000);
+        let b = jail_id_at("mgr", 1_700_000_000_000_000_000);
+        assert_ne!(a, b);
+        for id in [&a, &b] {
+            aegis_common::validate::validate_jail_id(id).unwrap();
+        }
+    }
+
+    #[test]
+    fn fresh_ids_keep_the_prefix() {
+        assert!(fresh_jail_id("insp").starts_with("insp-"));
+    }
+}

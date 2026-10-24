@@ -70,8 +70,16 @@ fn ask(sock: &Path, jail: &str) -> serde_json::Value {
     serde_json::from_str(&line).unwrap()
 }
 
+/// With the jailer helper installed, prove would launch a jail, so these tests
+/// cannot run. That is a loud failure unless SERVE_JAIL_TEST_SKIP_OK=1 says the
+/// skip is expected, so a host with the helper never reports a silent pass.
 fn helper_absent() -> bool {
     if Path::new(HELPER).exists() {
+        assert_eq!(
+            std::env::var("SERVE_JAIL_TEST_SKIP_OK").as_deref(),
+            Ok("1"),
+            "{HELPER} is present, so prove would launch a jail; set SERVE_JAIL_TEST_SKIP_OK=1 to skip"
+        );
         eprintln!("skip: {HELPER} present, prove would launch a jail");
         return false;
     }

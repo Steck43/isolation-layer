@@ -64,7 +64,10 @@ fn vsock_guest_that_stalls_mid_frame_errors_inside_the_deadline() {
     let (r, took) = rx
         .recv_timeout(WATCH)
         .expect("listener still blocked after the watch");
-    assert!(r.is_err(), "{r:?}");
+    assert!(
+        r.as_ref().err().is_some_and(|e| e.contains("timed out")),
+        "{r:?}"
+    );
     assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");
     drop(c);
 }
@@ -79,4 +82,34 @@ fn vsock_prompt_guest_is_still_served() {
         .unwrap();
     let (r, _) = rx.recv_timeout(WATCH).expect("listener did not return");
     assert_eq!(r, Ok("t-ok".to_string()));
+}
+
+/// A guest that sends one byte every 150 ms keeps each read short but the
+/// whole frame long. The deadline holds over the frame, not over each read.
+#[test]
+fn vsock_guest_that_drips_a_frame_errors_inside_the_deadline() {
+    let b = base("drip");
+    let rx = serve(b.clone(), 64);
+    let mut c = connect(&b, 64);
+    let body =
+        br#"{"schema_version":1,"kind":"result","task_id":"drip","filename":"r.txt","body":"ok"}"#;
+    let mut frame = (body.len() as u32).to_be_bytes().to_vec();
+    frame.extend_from_slice(body);
+    thread::spawn(move || {
+        for byte in frame {
+            if c.write_all(&[byte]).is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(150));
+        }
+        thread::sleep(Duration::from_secs(20));
+    });
+    let (r, took) = rx
+        .recv_timeout(WATCH)
+        .expect("listener still blocked after the watch");
+    assert!(
+        r.as_ref().err().is_some_and(|e| e.contains("timed out")),
+        "{r:?}"
+    );
+    assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");
 }
