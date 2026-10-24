@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use aegis_common::firecracker::vsock_roundtrip;
+use aegis_common::firecracker::{vsock_roundtrip, FcError};
 
 const TIMEOUT: Duration = Duration::from_secs(1);
 const WATCH: Duration = Duration::from_secs(5);
@@ -30,7 +30,10 @@ fn roundtrip(b: PathBuf, port: u16) -> mpsc::Receiver<(Result<String, String>, D
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let t0 = Instant::now();
-        let r = vsock_roundtrip(&b, port, TIMEOUT).map_err(|e| e.to_string());
+        let r = vsock_roundtrip(&b, port, TIMEOUT).map_err(|e| match e {
+            FcError::Io(e) => format!("{:?}: {e}", e.kind()),
+            e => e.to_string(),
+        });
         let _ = tx.send((r, t0.elapsed()));
     });
     rx
@@ -52,7 +55,7 @@ fn timed_out_inside(rx: mpsc::Receiver<(Result<String, String>, Duration)>) {
         .recv_timeout(WATCH)
         .expect("vsock_roundtrip still blocked after the watch");
     assert!(
-        r.as_ref().err().is_some_and(|e| e.contains("timed out")),
+        r.as_ref().err().is_some_and(|e| e.starts_with("TimedOut")),
         "{r:?}"
     );
     assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");

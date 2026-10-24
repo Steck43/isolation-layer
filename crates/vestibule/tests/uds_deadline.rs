@@ -24,7 +24,10 @@ fn serve(p: PathBuf) -> mpsc::Receiver<(Result<String, String>, Duration)> {
         let t0 = Instant::now();
         let r = serve_one_with_deadline(&p, ParseMode::Enforce, &ServeOpts::default(), TIMEOUT)
             .map(|m| m.task_id)
-            .map_err(|e| e.to_string());
+            .map_err(|e| match e {
+                vestibule::ListenError::Io(e) => format!("{:?}: {e}", e.kind()),
+                e => e.to_string(),
+            });
         let _ = tx.send((r, t0.elapsed()));
     });
     rx
@@ -47,7 +50,7 @@ fn uds_guest_that_never_connects_errors_inside_the_deadline() {
         .recv_timeout(WATCH)
         .expect("listener still blocked after the watch");
     let err = r.expect_err("no guest connected, yet the listener returned a message");
-    assert!(err.contains("timed out"), "{err}");
+    assert!(err.starts_with("TimedOut"), "{err}");
     assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");
 }
 
@@ -61,7 +64,7 @@ fn uds_guest_that_stalls_mid_frame_errors_inside_the_deadline() {
         .recv_timeout(WATCH)
         .expect("listener still blocked after the watch");
     assert!(
-        r.as_ref().err().is_some_and(|e| e.contains("timed out")),
+        r.as_ref().err().is_some_and(|e| e.starts_with("TimedOut")),
         "{r:?}"
     );
     assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");
@@ -110,7 +113,7 @@ fn uds_guest_that_drips_a_frame_errors_inside_the_deadline() {
         .recv_timeout(WATCH)
         .expect("listener still blocked after the watch");
     assert!(
-        r.as_ref().err().is_some_and(|e| e.contains("timed out")),
+        r.as_ref().err().is_some_and(|e| e.starts_with("TimedOut")),
         "{r:?}"
     );
     assert!(took < TIMEOUT + Duration::from_secs(2), "{took:?}");
