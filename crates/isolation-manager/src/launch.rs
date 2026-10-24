@@ -8,14 +8,23 @@ use std::time::Duration;
 use aegis_common::paths::{GOLDEN_KERNEL, GOLDEN_ROOTFS, JAILER_LAUNCH_BIN};
 use aegis_common::validate::LaunchRequest;
 
-/// Unique jail id: `{prefix}-{nanos}-{pid}` (min length for validate_jail_id).
+/// Unique jail id: `{prefix}-{nanos}-{pid}-{seq}` (min length for
+/// validate_jail_id). `seq` is a per-process counter, so two ids minted in the
+/// same nanosecond by parallel serve threads still differ.
 pub fn fresh_jail_id(prefix: &str) -> String {
     let n = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
+    jail_id_at(prefix, n)
+}
+
+static JAIL_ID_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn jail_id_at(prefix: &str, nanos: u128) -> String {
+    let seq = JAIL_ID_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let pid = std::process::id();
-    format!("{prefix}-{n}-{pid}")
+    format!("{prefix}-{nanos}-{pid}-{seq}")
 }
 
 #[derive(Debug)]
@@ -158,10 +167,7 @@ pub fn launch_via_helper(jail_id: &str) -> Result<LaunchedVm, String> {
 
     std::thread::sleep(Duration::from_millis(500));
     if let Some(status) = child_ref.try_wait().ok().flatten() {
-        let stderr_msg = serial_buf
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let stderr_msg = serial_buf.lock().map(|g| g.clone()).unwrap_or_default();
         return Err(blocked_message(
             &helper,
             jail_id,
@@ -269,7 +275,9 @@ pub fn teardown_vm(vm: &mut LaunchedVm) -> Result<(), String> {
     if let Ok(raw) = std::fs::read_to_string(&fc_pid_path) {
         if let Ok(pid) = raw.trim().parse::<i32>() {
             if pid > 1 {
-                let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+                let _ = Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .status();
                 for _ in 0..20 {
                     let alive = Command::new("kill")
                         .args(["-0", &pid.to_string()])
@@ -281,7 +289,9 @@ pub fn teardown_vm(vm: &mut LaunchedVm) -> Result<(), String> {
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).status();
+                let _ = Command::new("kill")
+                    .args(["-KILL", &pid.to_string()])
+                    .status();
             }
         }
     }
@@ -327,13 +337,12 @@ fn resolve_helper_path() -> PathBuf {
     if installed.exists() {
         return installed;
     }
-    let release = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/release/jailer-launch");
+    let release =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/jailer-launch");
     if release.exists() {
         return release;
     }
-    let debug = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/jailer-launch");
+    let debug = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/jailer-launch");
     if debug.exists() {
         return debug;
     }
