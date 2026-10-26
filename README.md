@@ -42,6 +42,35 @@ isolate route door capability-gate calls. Every receipt it prints carries
 Scripts for live runs on a KVM host are in `scripts/` and `deploy/`; the
 operator install is in [deploy/INSTALL.md](deploy/INSTALL.md).
 
+## Why a microVM and not a sandbox
+
+The design is chosen against one threat: **an agent that disables its own fence.**
+
+Leonardo Di Donato documented this class for Ona on March 3, 2026: a coding agent escaped a bubblewrap sandbox by using `/proc/self/root` as a denylist synonym for a blocked path, then tried to disable bubblewrap once caught ([How Claude Code Escapes its Own Denylist and Sandbox](https://ona.com/stories/how-claude-code-escapes-its-own-denylist-and-sandbox)). The failure was structural, not a missing rule. The fence and the fenced shared a trust domain, and a denylist that enumerates badness loses to an opponent that routes around it.
+
+A Firecracker microVM removes the shared domain rather than hardening it. The boundary is enforced by KVM in the host kernel and by a separate guest kernel. It is not an object inside the guest: no namespace to unshare, no LSM policy to disable, no fence process in the guest's PID table to kill. Firecracker exposes five emulated devices: virtio-net, virtio-block, virtio-vsock, serial console, and a minimal keyboard controller. Everything not implemented is attack surface that does not exist.
+
+The jailer sits underneath as a backstop, wrapping the Firecracker process itself in cgroups, namespaces, seccomp, and a chroot and dropping privileges before the guest runs. Two boundaries: the VM is primary, the jailer catches a hypothetical VMM-barrier compromise in a jailed host process rather than as root on the host.
+
+![Isolation path from the jailer to the dropbox](docs/diagrams/isolation-layer-path.svg)
+
+The alternatives were considered and rejected on the record, not overlooked. Plain containers share the host kernel, which is the same weakness the escape class exploits. Docker is runtime, packaging and test infrastructure, never the isolation boundary. This repo has no Dockerfile. bubblewrap with Landlock and seccomp is the exact configuration that was escaped. gVisor is strong and needs no hardware virtualization, but its boundary is a user-space kernel processing guest syscalls, a wider surface than KVM plus five devices; it is the named fallback, not a shipped runtime (`git grep` finds it in docs, not in `crates/`). WebAssembly is the wrong shape for code that needs a real filesystem and subprocesses.
+
+ASI05 Unexpected Code Execution is the class this contains: one microVM per task under the jailer, seccomp default KILL, Landlock on the host listener. That control is built and tested, and untested live on the full path, because the box is not invoked on every permitted call. ASI07 is not mapped.
+
+## Claim tense
+
+Every claim in this repository carries its evidence rung. The distinction is load-bearing and is enforced in the docs.
+
+| Tag | Meaning |
+|---|---|
+| `RECORD` | Off-the-shelf and proven today. Shipped code, a real primitive, or a verified source is named. |
+| `VISION` | A target or design intent. Not yet standing. |
+| `SOURCE:` | The primary source named *before* the claim that rests on it. |
+| `ASSUMPTION (verify):` | An input taken on faith, with the exact check to run. |
+
+Building a thing and watching it work does not promote a claim by itself. A boundary probe with a named negative control does.
+
 ## How to run it
 
 From a fresh clone, with a Rust toolchain:
@@ -121,6 +150,16 @@ are not claimed here:
   it writes, so it appends after a mid-chain edit or delete.
 - The gate scenarios (S01, S02, S03, S04, S09, S12) run in the
   capability-gate demo.
+
+## Related work
+
+- Stecker, L. (2026). capability-gate. Zenodo. https://doi.org/10.5281/zenodo.22018052. Sibling layer. The prove receipt binds a gate digest and an atoms digest to one call id. Borrows the concept record. Differs: this tree is the box, and it is not invoked on every permitted call.
+- Agache et al. (2020). Firecracker. NSDI. https://www.usenix.org/conference/nsdi20/presentation/agache. Borrows the KVM microVM and the small device set. Differs: nested L1 guest, and the measured cold start is 958.6 ms jailed.
+- Firecracker jailer. https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md. Borrows the jailer as the second boundary. `jailer_argv` wraps it.
+- Linux seccomp BPF. https://docs.kernel.org/userspace-api/seccomp_filter.html. Borrows a default-KILL allowlist and the PROT_EXEC filter on the host listener.
+- Linux Landlock. https://docs.kernel.org/userspace-api/landlock.html. Borrows an ABI 1 path-beneath allowlist on the host listener, not in the guest.
+- gVisor. https://gvisor.dev/docs/. Differs. Named fallback. The boundary here is KVM plus a guest kernel, not a user-space kernel.
+- Kata Containers architecture. https://github.com/kata-containers/kata-containers/blob/main/docs/design/architecture/README.md. Differs. This repo drives Firecracker directly and does not inherit cloud orchestration.
 
 ## License
 

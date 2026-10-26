@@ -1,4 +1,4 @@
-//! Stage-Q1 / B3.2d inspect verdict — guest **claim** schema (not host disposition).
+//! Stage-Q1 / B3.2d inspect verdict. Guest **claim** schema (not host disposition).
 //!
 //! `schema_version` 2: marker harness (A) + size_cap (B). Host maps claims →
 //! Advance/Hold/Drop (CaMeL/AuthGraph pattern-adopt: claims ≠ decisions).
@@ -25,7 +25,7 @@ pub enum InspectOutcome {
 pub enum ReasonCode {
     HashOk,
     HashMismatch,
-    /// Fixture / unit only — not a live policy result.
+    /// Fixture / unit only. Not a live policy result.
     AnalyzerStub,
     /// Slice A: exact suspect marker present in artifact.
     MarkerSuspect,
