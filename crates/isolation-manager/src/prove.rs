@@ -2,6 +2,7 @@ use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use aegis_common::validate::validate_jail_id;
 use aegis_common::{
     assert_host_vmm_hygiene, default_chain_path, ChainVerdict, DecisionChain, HostSnapshot,
 };
@@ -117,6 +118,15 @@ pub fn run(args: ProveArgs) -> i32 {
         }
     }
     let jail_id = args.jail_id.clone().unwrap_or_else(|| fresh_jail_id("mgr"));
+    // Validate before the id reaches stdout or the chain. A refused id is never
+    // echoed raw and never becomes a chain row.
+    if validate_jail_id(&jail_id).is_err() {
+        eprintln!(
+            "prove refused: invalid jail id (len {}; want 12 to 64 chars, alnum and dash)",
+            jail_id.len()
+        );
+        return 1;
+    }
     // Print before launch so residue scripts can name this jail on sad paths.
     println!("jail_id={jail_id}");
     println!("decision_chain_path={}", chain.path().display());

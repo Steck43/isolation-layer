@@ -99,11 +99,11 @@ fn refused_call_names_its_own_jail_not_the_previous_row() {
     }
     let dir = tmp("seq");
     let s = serve(&dir, "m0.sock", ("ALLOW_GENESIS", "1"));
-    let a = ask(&s.sock, "jail-A");
-    let b = ask(&s.sock, "jail-B");
-    assert_eq!(a["jail_id"], "jail-A", "{a}");
+    let a = ask(&s.sock, "jail-seq-a-0001");
+    let b = ask(&s.sock, "jail-seq-b-0001");
+    assert_eq!(a["jail_id"], "jail-seq-a-0001", "{a}");
     assert_eq!(b["chain_grew"], false, "{b}");
-    assert_eq!(b["jail_id"], "jail-B", "{b}");
+    assert_eq!(b["jail_id"], "jail-seq-b-0001", "{b}");
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn parallel_replies_never_name_another_callers_jail() {
         let hs: Vec<_> = (0..WIDTH)
             .map(|i| {
                 let (sock, gate) = (sock.clone(), gate.clone());
-                let want = format!("jail-P{:03}", round * WIDTH + i);
+                let want = format!("jail-par-{:05}", round * WIDTH + i);
                 thread::spawn(move || {
                     gate.wait();
                     let r = ask(&sock, &want);
