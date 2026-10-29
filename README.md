@@ -163,6 +163,5 @@ are not claimed here:
 
 ## License
 
-`LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `Apache-2.0`.
-That split is named here on purpose. Citation metadata is in
+`LICENSE` is MIT. The Cargo workspace (`Cargo.toml`) declares `MIT`. Citation metadata is in
 [CITATION.cff](CITATION.cff).
