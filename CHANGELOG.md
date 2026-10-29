@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- License metadata: the Cargo workspace and `demos/sandbox-demo` now declare MIT, matching `LICENSE`. The license test and the README license paragraph say MIT.
 - `isolation-manager prove` checks the jail id against the jail grammar (12 to 64 characters, letters, digits and dashes) before it prints the id or writes a chain row. A bad id, such as `../x`, an oversized id, or one with an escape or control character, is refused with a non-zero exit, is not echoed, and adds no chain row. Before this, such an id was printed raw and recorded in `launch` and `fail_closed` rows, since the check only ran inside the launch helper. `serve` goes through the same check. `crates/isolation-manager/tests/prove_jail_id_validate.rs` pins both paths, and the serve jail id tests now use ids that pass the grammar.
 - The README keeps its Proof section as generated and adds why the box is a Firecracker microVM under the jailer and not a sandbox, the claim tense tags, and related work. The path figure sits under the microVM section.
 - The path figure `docs/diagrams/isolation-layer-path.svg` starts at the jailer. The build spec dates the Ona bubblewrap write-up March 3, 2026, matching the byline on the linked page.
@@ -82,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/conflicting_handoff.py` launches the box only on a CONFLICTING rollup. Dry by default. `--launch` is the boot plus kill-residue path. Tests never boot.
 - `scripts/kill_residue.py` fails if a Firecracker guest or VMM is still up after teardown. Anderson row 2. Not a boot. A dest-read command line that names those binaries is not residue.
 - `scripts/dropbox_hash_guard.py` hashes host-held body bytes and rejects path escape. Time Chamber is not the door. `always_invoked` stays false.
-- `cargo test --workspace` in floor CI. README names the MIT LICENSE versus Cargo Apache-2.0 split.
+- `cargo test --workspace` in floor CI. README names the MIT LICENSE.
 - LOOP-006 four named rows (`tests/test_loop006_named.py`). Each skips without `BOX_LIVE_PROVE`. Boot/kill is not this suite.
 - CITATION.cff and `.zenodo.json` so a later tag can mint. No DOI on this record yet.
 - Isolation-manager `read` verb: allowlisted host-path read under observe. Receipts keep `always_invoked_claim` false.
