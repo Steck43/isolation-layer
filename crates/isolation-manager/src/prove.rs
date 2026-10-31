@@ -1,4 +1,7 @@
+use std::ffi::OsString;
 use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -477,26 +480,17 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     }
 
     // B3 slice 2c: guest → vestibule framed ResultMessage on vsock port 53.
-    let vsock_base_v = vm.vsock_uds.clone();
+    // The listener runs as its own process. Its hardening moves the whole
+    // calling process into a 512 MiB, 64-pid cgroup leaf, so run in-process
+    // it capped the rest of this prove run too, and the inspector launch that
+    // copies the 1 GiB rootfs was OOM-killed inside that leaf.
     let reject_path = std::env::temp_dir().join(format!(
         "vestibule-rejects-{}.jsonl",
         std::process::id()
     ));
     let reject_path_print = reject_path.clone();
-    let vestibule_handle = thread::spawn(move || {
-        let log = vestibule::RejectLog::open(&reject_path)?;
-        let opts = vestibule::ServeOpts {
-            reject_log: Some(log),
-            harden: true,
-        };
-        vestibule::serve_vsock_one_with_opts(
-            &vsock_base_v,
-            53,
-            vestibule::ParseMode::Enforce,
-            Duration::from_secs(45),
-            &opts,
-        )
-    });
+    let listener = spawn_vestibule_listener(&vm.vsock_uds, 53, &reject_path)?;
+    let listener = wait_for_listen_path(listener, &vm.vsock_uds, 53, Duration::from_secs(10))?;
     // Length-prefixed JSON frame via python3 in guest (socat binary pipe).
     let guest_vestibule = concat!(
         "python3 -c \"",
@@ -511,10 +505,7 @@ fn run_checks(vm: &mut crate::launch::LaunchedVm) -> Result<serde_json::Value, S
     stdin.flush().map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_secs(5));
 
-    let vestibule_msg = vestibule_handle
-        .join()
-        .map_err(|_| "vestibule thread panicked".to_string())?
-        .map_err(|e| format!("vestibule framed prove failed: {e}"))?;
+    let vestibule_msg = finish_vestibule_listener(listener)?;
     let vestibule_ok = vestibule_msg.kind == "result"
         && vestibule_msg.task_id == "prove-b3"
         && vestibule_msg.body == "hello-vestibule";
@@ -736,6 +727,142 @@ pub fn host_home_is_invisible(transcript: &str, homes: &[String]) -> bool {
         }
     }
     true
+}
+
+/// `vestibule-listen` from the same build as this binary. Missing is a refusal:
+/// prove never falls back to an in-process listener.
+fn vestibule_listen_bin() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let bin = exe.with_file_name("vestibule-listen");
+    if bin.is_file() {
+        Ok(bin)
+    } else {
+        Err(format!(
+            "vestibule-listen not found beside {}; build the workspace",
+            exe.display()
+        ))
+    }
+}
+
+/// Enforce and harden are always on; there is no switch for either.
+fn vestibule_listen_args(vsock_base: &Path, port: u16, reject_log: &Path) -> Vec<OsString> {
+    vec![
+        OsString::from("--vsock-base"),
+        vsock_base.as_os_str().to_owned(),
+        OsString::from(port.to_string()),
+        OsString::from("--enforce"),
+        OsString::from("--harden"),
+        OsString::from("--reject-log"),
+        reject_log.as_os_str().to_owned(),
+    ]
+}
+
+fn spawn_vestibule_listener(
+    vsock_base: &Path,
+    port: u16,
+    reject_log: &Path,
+) -> Result<Child, String> {
+    Command::new(vestibule_listen_bin()?)
+        .args(vestibule_listen_args(vsock_base, port, reject_log))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("vestibule-listen spawn failed: {e}"))
+}
+
+/// Wait until the listener has bound `<vsock_base>_<port>`, so the guest does
+/// not connect before anyone listens. A listener that exits first is a failure.
+fn wait_for_listen_path(
+    mut child: Child,
+    vsock_base: &Path,
+    port: u16,
+    within: Duration,
+) -> Result<Child, String> {
+    let listen_path = PathBuf::from(format!("{}_{port}", vsock_base.display()));
+    let deadline = Instant::now() + within;
+    loop {
+        if listen_path.exists() {
+            return Ok(child);
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            let out = child.wait_with_output().map_err(|e| e.to_string())?;
+            return Err(format!(
+                "vestibule-listen exited before bind ({status}): {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "vestibule-listen did not bind {}",
+                listen_path.display()
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// The listener prints one accepted message as JSON and exits 0, or exits
+/// non-zero after its own deadline. Anything else is a failure.
+fn finish_vestibule_listener(child: Child) -> Result<vestibule::ResultMessage, String> {
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("vestibule-listen wait failed: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "vestibule framed prove failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let line = String::from_utf8_lossy(&out.stdout);
+    serde_json::from_str(line.trim())
+        .map_err(|e| format!("vestibule-listen output is not a result message: {e}"))
+}
+
+#[cfg(test)]
+mod vestibule_process_tests {
+    use super::vestibule_listen_args;
+    use std::path::Path;
+
+    #[test]
+    fn the_listener_always_runs_enforced_and_hardened() {
+        let args = vestibule_listen_args(Path::new("/j/v.sock"), 53, Path::new("/t/r.jsonl"));
+        let args: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--vsock-base",
+                "/j/v.sock",
+                "53",
+                "--enforce",
+                "--harden",
+                "--reject-log",
+                "/t/r.jsonl"
+            ]
+        );
+    }
+
+    /// Go-red: put the in-process listener back in run_checks and this fails.
+    /// Hardening moves the whole process into a 512 MiB cgroup leaf, which then
+    /// caps the inspector launch that copies the 1 GiB rootfs.
+    #[test]
+    fn prove_never_runs_the_vestibule_in_process() {
+        let src = include_str!("prove.rs");
+        let body = src.split("#[cfg(test)]").next().unwrap();
+        for banned in [
+            "serve_vsock_one_with_opts",
+            "serve_one_with_opts",
+            "apply_listener_hardening",
+        ] {
+            assert!(!body.contains(banned), "prove.rs calls {banned} in-process");
+        }
+    }
 }
 
 #[cfg(test)]
