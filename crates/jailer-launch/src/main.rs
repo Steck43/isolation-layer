@@ -2,11 +2,12 @@ mod jailer_cmd;
 
 use std::env;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 use aegis_common::firecracker::prepare_jail_root;
 use aegis_common::paths::JAILER_BIN;
+use aegis_common::trust::check_trusted_path_from;
 use aegis_common::validate::{assert_cgroup_version, LaunchRequest, ValidationError};
 use clap::Parser;
 
@@ -85,6 +86,13 @@ fn run() -> Result<(), i32> {
         3
     })?;
 
+    let jailer_base = jailer_base_dir();
+    preflight_trust(
+        &[&jailer_base, &req.kernel_path, &req.rootfs_path],
+        Path::new("/"),
+        0,
+    )?;
+
     let jail_root = prepare_jail_root(&req).map_err(|e| {
         eprintln!("prepare jail root failed: {e}");
         4
@@ -105,6 +113,18 @@ fn run() -> Result<(), i32> {
     Err(5)
 }
 
+/// Root acts only on paths no unprivileged user can change: every component
+/// root-owned, not group or other writable, and not a symlink.
+fn preflight_trust(paths: &[&Path], from: &Path, owner: u32) -> Result<(), i32> {
+    for p in paths {
+        check_trusted_path_from(p, from, owner).map_err(|e| {
+            eprintln!("untrusted path: {e}");
+            3
+        })?;
+    }
+    Ok(())
+}
+
 fn jailer_base_dir() -> PathBuf {
     #[cfg(test)]
     {
@@ -115,6 +135,19 @@ fn jailer_base_dir() -> PathBuf {
         }
     }
     PathBuf::from(aegis_common::paths::JAILER_BASE)
+}
+
+/// True only in unit tests that point the base at a temp folder, which is not
+/// root-owned. The release build always checks.
+fn test_base_override() -> bool {
+    #[cfg(test)]
+    {
+        env::var_os("AEGIS_TEST_JAILER_BASE").is_some()
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
 }
 
 fn cleanup_path_is_inside_jail(
@@ -142,6 +175,9 @@ fn cleanup_jail(jail_id: &str) -> Result<(), i32> {
     })?;
 
     let jailer_base = jailer_base_dir();
+    if !test_base_override() {
+        preflight_trust(&[&jailer_base], Path::new("/"), 0)?;
+    }
     let instance = PathBuf::from(&jailer_base)
         .join("firecracker")
         .join(jail_id);
@@ -219,6 +255,58 @@ mod tests {
         assert!(joined.contains("--cgroup-version 2"));
         assert!(!joined.contains("/bin/sh"));
         assert!(!joined.contains("--netns"));
+    }
+
+    /// Go-red: drop any of these flags from jailer_argv and this fails.
+    #[test]
+    fn every_vm_gets_cgroup_and_resource_limits() {
+        let req = LaunchRequest {
+            jail_id: "mgr-limits01".into(),
+            kernel_path: PathBuf::from("/k"),
+            rootfs_path: PathBuf::from("/r"),
+            uid: 1000,
+            gid: 1000,
+        };
+        let joined = jailer_cmd::jailer_argv(&req).join(" ");
+        for want in [
+            format!("--cgroup memory.max={}", jailer_cmd::VM_MEMORY_MAX_BYTES),
+            format!("--cgroup pids.max={}", jailer_cmd::VM_PIDS_MAX),
+            format!("--resource-limit fsize={}", jailer_cmd::VM_FSIZE_MAX_BYTES),
+            format!("--resource-limit no-file={}", jailer_cmd::VM_NOFILE_MAX),
+        ] {
+            assert!(joined.contains(&want), "missing {want}");
+        }
+        // The limits go to the jailer, before the "--" that starts Firecracker's own args.
+        let dashdash = joined.find(" -- ").unwrap();
+        assert!(joined.find("--cgroup memory.max").unwrap() < dashdash);
+    }
+
+    #[test]
+    fn preflight_refuses_a_jail_base_the_caller_can_write() {
+        use std::fs;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("jailer");
+        fs::create_dir_all(&base).unwrap();
+        let me = fs::metadata(tmp.path()).unwrap().uid();
+        fs::set_permissions(tmp.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(super::preflight_trust(&[&base], tmp.path(), me), Ok(()));
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o775)).unwrap();
+        assert_eq!(super::preflight_trust(&[&base], tmp.path(), me), Err(3));
+    }
+
+    /// Go-red: move the preflight below prepare_jail_root, or drop it, and this fails.
+    #[test]
+    fn run_checks_trust_before_root_touches_the_jail() {
+        let src = include_str!("main.rs");
+        let run = &src[src.find("fn run()").unwrap()..src.find("fn preflight_trust").unwrap()];
+        let trust = run.find("preflight_trust(").expect("run must call preflight_trust");
+        let prepare = run.find("prepare_jail_root(&req)").unwrap();
+        assert!(trust < prepare, "preflight must run before prepare_jail_root");
+        let cleanup = &src[src.find("fn cleanup_jail(").unwrap()..];
+        let cleanup = &cleanup[..cleanup.find("\n}\n").unwrap()];
+        assert!(cleanup.contains("preflight_trust("), "cleanup must check the base");
     }
 
     #[test]

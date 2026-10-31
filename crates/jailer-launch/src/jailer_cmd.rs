@@ -1,7 +1,18 @@
 use aegis_common::paths::{FIRECRACKER_BIN, JAILER_BASE};
 use aegis_common::LaunchRequest;
 
+/// Guest memory is 512 MiB (vm_config_json); the cap leaves 256 MiB for the
+/// VMM, its threads and the page cache it charges.
+pub const VM_MEMORY_MAX_BYTES: u64 = 768 * 1024 * 1024;
+/// Firecracker runs a handful of threads per VM; 64 leaves room and stops a fork bomb.
+pub const VM_PIDS_MAX: u32 = 64;
+/// Largest file the VMM may write: the 1 GiB rootfs it writes in place, with headroom.
+pub const VM_FSIZE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const VM_NOFILE_MAX: u32 = 1024;
+
 /// Build the fixed jailer argument list. Callers cannot inject exec-file or extra flags.
+/// Each VM gets its own cgroup limits and resource limits, as Firecracker's
+/// production host setup asks.
 pub fn jailer_argv(req: &LaunchRequest) -> Vec<String> {
     vec![
         "--id".into(),
@@ -16,6 +27,14 @@ pub fn jailer_argv(req: &LaunchRequest) -> Vec<String> {
         JAILER_BASE.into(),
         "--cgroup-version".into(),
         "2".into(),
+        "--cgroup".into(),
+        format!("memory.max={VM_MEMORY_MAX_BYTES}"),
+        "--cgroup".into(),
+        format!("pids.max={VM_PIDS_MAX}"),
+        "--resource-limit".into(),
+        format!("fsize={VM_FSIZE_MAX_BYTES}"),
+        "--resource-limit".into(),
+        format!("no-file={VM_NOFILE_MAX}"),
         "--".into(),
         "--api-sock".into(),
         "api.sock".into(),
