@@ -2,7 +2,7 @@
 # Install pinned Firecracker + jailer to /usr/local/bin (requires root).
 set -euo pipefail
 
-VERSION="${FC_VERSION:-v1.16.1}"
+VERSION="${FC_VERSION:-v1.16.2}"
 ARCH="$(uname -m)"
 TARBALL="firecracker-${VERSION}-${ARCH}.tgz"
 BASE="https://github.com/firecracker-microvm/firecracker/releases/download/${VERSION}"

@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::net::Shutdown;
-use std::os::unix::fs::chown;
+use std::os::unix::fs::lchown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -110,8 +110,9 @@ pub fn prepare_jail_root(req: &LaunchRequest) -> Result<PathBuf, FcError> {
     copy_rootfs(&req.rootfs_path, &rootfs_dst)?;
     let cfg_dst = jail_root.join("vm_config.json");
     fs::write(&cfg_dst, req.vm_config_json())?;
-    chown(&rootfs_dst, Some(req.uid), Some(req.gid))?;
-    chown(&cfg_dst, Some(req.uid), Some(req.gid))?;
+    // lchown: root never follows a link it did not create.
+    lchown(&rootfs_dst, Some(req.uid), Some(req.gid))?;
+    lchown(&cfg_dst, Some(req.uid), Some(req.gid))?;
     Ok(jail_root)
 }
 

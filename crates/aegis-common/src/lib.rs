@@ -4,6 +4,7 @@ pub mod decision_chain;
 pub mod firecracker;
 pub mod host_snapshot;
 pub mod paths;
+pub mod trust;
 pub mod validate;
 
 pub use decision_chain::{
